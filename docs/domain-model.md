@@ -348,22 +348,73 @@ rather than as running. `last_success_at` is tracked separately from
 `last_cycle_at`, so a failure cannot erase the record of when coverage was last
 actually proven.
 
+## Office presentation
+
+The authenticated `/` office is a semantic presentation of observations; it is
+not a scheduler, execution engine, or proof that work succeeded. As described in
+`README.md` under “Office interaction and truthfulness”:
+
+- A desk or directory entry selects an **Invocation**. Multiple turns of the same
+  agent remain distinct; a profile represents an **AgentDefinition**, not an
+  execution. The People tab shows location-scoped definitions, including
+  historical members, not evidence of execution. A session is not an invocation.
+- A **Root Run** is not a project. Project/location selection is separate from
+  root-run grouping, and location and provenance boundaries remain intact.
+  Neither session ancestry nor spatial proximity proves a handoff or an
+  execution relation.
+- Seats are presentation-only allocations, stable during a mounted view across
+  snapshot, filter and reconnect changes, not durable domain identities across
+  reloads. Run-membership reconciliation may relocate a seat without changing
+  invocation identity. Camera bounds include retained allocations so those seats
+  remain focusable as the bounded observation window changes.
+- Task text comes from the recorded trigger message; action text is joined only
+  to the invocation's assistant message. Both joins require recorded message
+  identity, session, location and provenance; no relationship is guessed from
+  nearby activity. Missing evidence stays unknown. No progress, busy state,
+  completion percentage or workflow success is inferred.
+- Authenticated `GET /api/office` returns a bounded, coherent database snapshot,
+  not an upstream command or a claim of complete observation.
+- Bounds, collection gaps, partial streams, freshness and disconnected updates
+  remain visible. A transient read failure retains an explicitly stale snapshot
+  with its original time; authentication/authorization denial or an `auth-expired`
+  stream event clears protected observations.
+- The owner-authenticated `/demo` office is deterministic and synthetic, not a
+  live observation. It does not call telemetry or command APIs and never replaces
+  failed live reads.
+- The 3D scene and accessible 2D fallback present the same observation identities
+  and evidence. Keyboard controls and reduced-motion presentation do not imply
+  additional activity or change domain meaning.
+
 ## Reserved interfaces (documented boundaries, not implemented)
 
 These are declared in `lib/domain/types.ts` and intentionally have no
 implementation. They mark the seams a future tracker or dispatcher would use, so
-the read-only boundary is explicit rather than accidental.
+the current read-only boundary is explicit rather than accidental.
+
+**Approved scope is not available capability.** Two manual actions are approved:
+create a session and submit its initial prompt, and submit a continuation prompt
+to an existing session. Both controls remain disabled; neither operation is
+simulated or implemented, because the authenticated
+target's write contract could not be verified. This build issues only `GET`
+requests upstream; supplying credentials alone does not enable commands. Any
+future upstream command integration remains behind these reserved boundaries
+until verified and implemented. See `docs/opencode-compatibility.md`, “Living
+office compatibility check (2026-10-16)”. Approval of these two manual actions
+does not introduce automatic scheduling, retry, cancellation or queue management.
+It does not authorize automatic permission responses. Even a future verified
+dispatch admission would not itself be evidence of an `Invocation`: the explicit
+assistant-message creation rule above would still apply.
 
 | Interface | Would do | Why it is not implemented |
 | --- | --- | --- |
 | `TaskSource` | List open tasks from an external tracker | Requires write-capable integration and a credential channel; out of scope |
 | `ExternalTaskReference` | Identify a task in an external system | Data shape only |
 | `TaskAssignment` | Bind an external task to a root run | Requires a dispatcher |
-| `RunLauncher` | Start a run | This application must never start upstream work |
+| `RunLauncher` | Start a run | Reserved boundary only; approved manual actions remain blocked pending target-contract verification and implementation |
 | `DispatchPolicy` | Choose an agent/model for a task | Requires a scheduler |
 | `WorkspaceAllocator` | Reserve an isolated workspace | Requires filesystem and VCS mutation |
 
-The read-only property is enforced, not just documented: an architecture test
+The current read-only property is enforced, not just documented: an architecture test
 asserts that only the owner's sign-in and sign-out handlers may export a
 mutating HTTP method.
 
