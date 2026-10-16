@@ -1,0 +1,72 @@
+# Caddy example for the read-only orchestration observer.
+#
+# This file is an EXAMPLE. It is not deployed by this repository, and no
+# production Caddy configuration was modified.
+#
+# What it does:
+#   - terminates TLS (automatic certificates when the domain resolves publicly)
+#   - forwards to the web service over the internal compose network
+#   - disables response buffering so the Server-Sent Events stream is not held
+#     back, which is the one non-obvious requirement for this application
+#
+# Replace `code.example.com` with the real hostname and keep
+# ORCH_PUBLIC_ORIGIN=https://<that hostname> in the environment so the
+# application's same-origin check accepts requests arriving on it.
+
+{
+	# Use the internal ACME directory instead when staging a new deployment, to
+	# avoid hitting rate limits while iterating.
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+	email admin@example.com
+}
+
+code.example.com {
+	encode zstd gzip
+
+	# The web service is addressed by its compose service name on the internal
+	# network. Port 3000 is the Next.js server.
+	reverse_proxy web:3000 {
+		# Server-Sent Events must not be buffered, or the browser receives
+		# nothing until the stream ends.
+		#
+		# `flush_interval -1` tells Caddy to flush immediately after every write.
+		flush_interval -1
+
+		# The change stream is a long-lived response; give it room.
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+
+		# Do not let a slow client hold a connection open indefinitely.
+		# Caddy applies its own timeouts; the application also rotates the
+		# stream (ORCH_SSE_MAX_MS) and the client resumes from its last
+		# sequence number, so rotation is lossless.
+	}
+
+	# Security headers. The application sets no-store on API responses and
+	# escapes all upstream-derived text, so a permissive CSP is not needed for
+	# correctness — but a restrictive one is cheap here because the app loads
+	# no third-party scripts.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	# Keep access logs, but never log cookies: they carry the session token.
+	log {
+		output file /data/access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		format console
+	}
+
+	# Optional: refuse to serve the app to anyone who is not on an allowlist.
+	# The application already requires an owner session, so this is belt and
+	# braces for a hostname that is publicly resolvable.
+	# @blocked not remote_ip 203.0.113.0/24
+	# respond @blocked 403
+}

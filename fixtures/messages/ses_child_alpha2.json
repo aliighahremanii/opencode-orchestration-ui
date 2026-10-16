@@ -1,0 +1,109 @@
+{
+  "data": [
+    {
+      "id": "msg_child_alpha2_0001",
+      "type": "user",
+      "time": {
+        "created": 1760000600000
+      },
+      "text": "Implement the fencing described in the plan."
+    },
+    {
+      "id": "msg_child_alpha2_0002",
+      "type": "assistant",
+      "time": {
+        "created": 1760000660000,
+        "completed": 1760000840000
+      },
+      "agent": "builder-complex",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Implementing the epoch check inside the same transaction as the write."
+        },
+        {
+          "type": "tool",
+          "id": "toolu_child_alpha2_0001",
+          "name": "edit",
+          "executed": true,
+          "time": {
+            "created": 1760000660000,
+            "completed": 1760000840000
+          },
+          "state": {
+            "status": "completed",
+            "input": {
+              "path": "lib/db/collection-state.ts",
+              "api_key": "tool-input-secret-9999"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "updated withFence"
+              }
+            ]
+          }
+        }
+      ],
+      "finish": "stop"
+    },
+    {
+      "id": "msg_child_alpha2_0003",
+      "type": "assistant",
+      "time": {
+        "created": 1760000900000,
+        "completed": 1760001200000
+      },
+      "agent": "builder-complex",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Fencing is in place. Handing off to review."
+        },
+        {
+          "type": "tool",
+          "id": "toolu_child_alpha2_0002",
+          "name": "bash",
+          "executed": true,
+          "time": {
+            "created": 1760000900000,
+            "completed": 1760001200000
+          },
+          "state": {
+            "status": "completed",
+            "input": {
+              "command": "npm run typecheck"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "no errors"
+              }
+            ]
+          }
+        }
+      ],
+      "finish": "stop"
+    },
+    {
+      "id": "msg_child_alpha2_0004",
+      "type": "idle",
+      "time": {
+        "created": 1760002280000
+      },
+      "outcome": "succeeded"
+    }
+  ],
+  "cursor": {
+    "previous": null,
+    "next": null
+  }
+}

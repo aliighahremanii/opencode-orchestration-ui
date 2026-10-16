@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "id": "msg_child_crossdelta_0001",
+      "type": "user",
+      "time": {
+        "created": 1760002640000
+      },
+      "text": "Review the same change in the second checkout."
+    },
+    {
+      "id": "msg_child_crossdelta_0002",
+      "type": "assistant",
+      "time": {
+        "created": 1760002700000,
+        "completed": 1760003000000
+      },
+      "agent": "reviewer",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "The second checkout has an older revision; noting the difference without blocking."
+        }
+      ],
+      "finish": "stop"
+    },
+    {
+      "id": "msg_child_crossdelta_0003",
+      "type": "idle",
+      "time": {
+        "created": 1760003000000
+      },
+      "outcome": "succeeded"
+    }
+  ],
+  "cursor": {
+    "previous": null,
+    "next": null
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "data": [
+    {
+      "id": "msg_root_beta_0001",
+      "type": "user",
+      "time": {
+        "created": 1760003600000
+      },
+      "text": "Design the dispatcher interface and write it to docs."
+    },
+    {
+      "id": "msg_root_beta_0002",
+      "type": "assistant",
+      "time": {
+        "created": 1760003660000,
+        "completed": 1760004200000
+      },
+      "agent": "plan",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Drafting the interface boundaries now."
+        },
+        {
+          "type": "tool",
+          "id": "toolu_root_beta_0001",
+          "name": "write",
+          "executed": true,
+          "time": {
+            "created": 1760003660000,
+            "completed": 1760004200000
+          },
+          "state": {
+            "status": "error",
+            "input": {
+              "path": "docs/design/dispatcher.md"
+            },
+            "error": {
+              "type": "tool_error",
+              "message": "EACCES: permission denied, open 'docs/design/dispatcher.md'"
+            }
+          }
+        }
+      ],
+      "finish": "error",
+      "error": {
+        "type": "api_error",
+        "message": "permission denied"
+      }
+    },
+    {
+      "id": "msg_root_beta_0003",
+      "type": "idle",
+      "time": {
+        "created": 1760004500000
+      },
+      "outcome": "failed"
+    }
+  ],
+  "cursor": {
+    "previous": null,
+    "next": null
+  }
+}

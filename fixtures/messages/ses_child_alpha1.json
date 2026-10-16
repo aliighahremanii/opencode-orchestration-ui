@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "id": "msg_child_alpha1_0001",
+      "type": "user",
+      "time": {
+        "created": 1760000180000
+      },
+      "text": "Where is the lease acquired and where is it checked?"
+    },
+    {
+      "id": "msg_child_alpha1_0002",
+      "type": "assistant",
+      "time": {
+        "created": 1760000240000,
+        "completed": 1760000540000
+      },
+      "agent": "explore",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "The lease is acquired in `acquireLease` and re-checked inside the write transaction by `withFence`, so the check and the write are atomic."
+        }
+      ],
+      "finish": "stop"
+    },
+    {
+      "id": "msg_child_alpha1_0003",
+      "type": "idle",
+      "time": {
+        "created": 1760000540000
+      },
+      "outcome": "succeeded"
+    }
+  ],
+  "cursor": {
+    "previous": null,
+    "next": null
+  }
+}

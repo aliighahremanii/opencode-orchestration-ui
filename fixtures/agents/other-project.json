@@ -1,0 +1,39 @@
+{
+  "location": {
+    "directory": "/srv/demo/other-project"
+  },
+  "data": [
+    {
+      "id": "build",
+      "name": "build",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "request": {
+        "headers": {}
+      },
+      "system": "",
+      "description": "Default implementation agent",
+      "mode": "primary",
+      "hidden": false,
+      "permissions": {}
+    },
+    {
+      "id": "reviewer",
+      "name": "reviewer",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "request": {
+        "headers": {}
+      },
+      "system": "",
+      "description": "Independent change review",
+      "mode": "subagent",
+      "hidden": false,
+      "permissions": {}
+    }
+  ]
+}

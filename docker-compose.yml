@@ -1,0 +1,116 @@
+# Read-only OpenCode orchestration observer.
+#
+# Two services, one image, one shared SQLite volume:
+#   - web:       the Next.js server, reachable through the reverse proxy
+#   - collector: the only writer of observations, and the only service that
+#                needs to reach the upstream OpenCode instance
+#
+# Bring it up with:
+#   docker compose -p opencode-opencode-orchestration-ui up -d
+#
+# Note the project name: it keeps this stack's containers, networks and volumes
+# namespaced so it cannot collide with another deployment on the same host.
+
+name: opencode-opencode-orchestration-ui
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: opencode-orchestration-ui:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Only the web server needs to bind publicly; the reverse proxy fronts it.
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      ORCH_DATA_DIR: /data
+      # The web process is not the collector and must not attempt to collect.
+      ORCH_ROLE: web
+    volumes:
+      - orch-data:/data
+    # Deliberately no `ports:` mapping: the proxy service reaches `web:3000`
+    # over the internal network, and the port is not published to the host.
+    expose:
+      - "3000"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:3000/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  collector:
+    image: opencode-orchestration-ui:local
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      ORCH_DATA_DIR: /data
+      ORCH_ROLE: collector
+    command: ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "scripts/collector.ts"]
+    volumes:
+      - orch-data:/data
+    networks:
+      # `internal` for nothing (the collector serves no traffic) and `upstream`
+      # for reaching the OpenCode instance.
+      - upstream
+    # The collector needs the database, so it shares the web service's image and
+    # volume. It publishes nothing.
+
+  # Optional reverse proxy. Remove this service if a host-level proxy (for
+  # example a system Caddy) already terminates TLS.
+  #
+  # Caddy is used because it obtains certificates automatically, and because the
+  # SSE endpoint needs buffering disabled — which the Caddyfile sets.
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+      # Uncomment when this proxy terminates TLS for a real domain:
+      # - "8443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - internal
+      - edge
+    profiles: ["proxy"]
+
+volumes:
+  orch-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  # Internal only: the proxy and the web server talk here.
+  internal:
+    internal: true
+  # Edge: the proxy is reachable from the host.
+  edge:
+  # Upstream: how the collector reaches the OpenCode instance.
+  #
+  # IMPORTANT: the default bridge network does NOT reach a service bound to the
+  # host's 127.0.0.1. Read "Reaching a loopback upstream" in the README before
+  # relying on this. The options below are commented out because the correct
+  # choice depends on where the instance runs.
+  upstream:
+    driver: bridge
+    # If the OpenCode instance is bound to the host loopback, use host
+    # networking for the collector instead (see README) or bind the instance to
+    # a private interface. A `host.docker.internal` alias alone is NOT enough
+    # for a service that listens only on 127.0.0.1.
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"

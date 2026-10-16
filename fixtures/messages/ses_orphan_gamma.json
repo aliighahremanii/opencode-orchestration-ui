@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "id": "msg_orphan_gamma_0001",
+      "type": "user",
+      "time": {
+        "created": 1760005400000
+      },
+      "text": "Confirm the documented agent endpoint is location scoped."
+    },
+    {
+      "id": "msg_orphan_gamma_0002",
+      "type": "assistant",
+      "time": {
+        "created": 1760005460000,
+        "completed": 1760005760000
+      },
+      "agent": "scout",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "The documented agent endpoint accepts a location filter, so the effective registry is location scoped."
+        }
+      ],
+      "finish": "stop"
+    },
+    {
+      "id": "msg_orphan_gamma_0003",
+      "type": "idle",
+      "time": {
+        "created": 1760005760000
+      },
+      "outcome": "succeeded"
+    }
+  ],
+  "cursor": {
+    "previous": null,
+    "next": null
+  }
+}

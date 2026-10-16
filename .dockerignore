@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.gitignore
+.orch-data
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+coverage
+tsconfig.tsbuildinfo
+README.md
+docs
+.opencode

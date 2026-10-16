@@ -1,36 +1,740 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OpenCode studio — the office
 
-## Getting Started
+A spatial Next.js/TypeScript office that observes an existing OpenCode
+instance: which runs exist, which sessions belong to them, which agents were
+*observed* to run, and how complete the observation actually is.
 
-First, run the development server:
+This build issues only `GET` requests upstream. Both approved manual dispatch
+actions (create session + initial prompt, and continue an existing session) are
+**blocked**, not simulated: the target's authenticated write contract could not
+be verified. The office explains this beside disabled controls. There is no
+automatic scheduling, retry, cancellation, queue management, permission response,
+or configuration mutation.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## What it shows
+
+| Page | Contents |
+| --- | --- |
+| `/` | Authenticated interactive isometric office, project/location directory, distinct invocation seats, profiles, evidence inspector and collection coverage |
+| `/demo` | Owner-authenticated, deterministic synthetic office; server-side session gate, no telemetry API/SSE or command calls from the demo view; no automatic fallback from live mode |
+| `/overview` | Original observation counts, collector health, recent root runs, recent activity, the retained history window |
+| `/runs` | Searchable, filterable root runs |
+| `/runs/[rootRunId]` | Observed session hierarchy, evidence-backed invocations (with their evidence), the activity timeline, and any collection gaps overlapping the run |
+| `/sessions/[sessionId]` | Observed session metadata, its invocations, and its full activity timeline |
+| `/agents` | Effective agent definitions per location, each beside its observed invocation count |
+| `/activity` | Searchable, filterable activity across every observed session |
+| `/status` | Database state, collector liveness, checkpoints, recorded gaps, collection warnings, and the limits of this build |
+
+Three distinctions are enforced throughout, because they are easy to get wrong:
+
+- **A definition is not an execution.** The agent registry comes from the API,
+  and is displayed with a separate count of invocations actually observed.
+- **An invocation needs evidence.** It is created only from an assistant message
+  carrying an explicit agent field. A child session or a session-level agent is
+  not enough.
+- **A reported outcome is not a verdict.** Upstream outcomes are labelled
+  "Upstream reported …". Idle, silence, and successful tool calls are never
+  presented as completion.
+
+See `docs/domain-model.md` for the full vocabulary.
+
+### Office interaction and truthfulness
+
+- Select a desk or directory entry to inspect an **Invocation**. Multiple turns
+  of the same agent retain distinct identities. The People tab instead shows
+  location-scoped definitions, including historical registry members.
+- Project/location selection and root-run areas are separate. Seats are stable
+  during refresh, filtering, reconnect, transient read failures and insertion for the mounted view. A
+  run-membership reconciliation moves a seat to its newly observed run, without
+  changing invocation identity. Spatial placement is not a handoff graph. Camera
+  bounds expand with allocated room/seat extents, including temporarily absent
+  observations, so focus remains reachable as rolling history grows.
+- Task text is the recorded trigger message; action text is joined only to that
+  invocation's assistant message, location and provenance. Missing evidence stays
+  unknown. No inferred progress, busy state or completion percentages.
+- The keyboard-accessible directory, native controls and inspector accompany
+  both renderers. Use zoom, pan, reset and focus buttons; Shift-drag also pans 3D.
+  “Read selection details” moves keyboard focus to the inspector.
+- Choose **2D plan** at any time. WebGL initialization failure/context loss falls
+  back without discarding selection. The two renderers share seats/room identity.
+  Camera changes are immediate, with no ambient animation or reconnect replay.
+- Scene renders on demand; hidden documents stop the renderer, office polling
+  and SSE. Reduced-motion preferences disable UI transitions. DPR is capped at
+  1.5 and projected labels at 20; seats use instanced procedural geometry with
+  viewport culling. No external fonts, textures or model downloads are required.
+- `GET /api/office` uses the existing owner authorization and a coherent SQLite
+  read transaction. The DTO exposes up to 100 invocations, 500 profiles and 100
+  locations; the scene caps visible entries at 100. Bounds, coverage gaps, partial
+  streams, collector freshness and disconnected updates are disclosed. Use the
+  existing diagnostics pages for the wider retained history.
+- A transient office-read failure retains the last successful snapshot and the
+  mounted view's selection, location, filters and seats, with an explicit stale
+  notice and original snapshot time. Recovery replaces observations without
+  remounting the view. HTTP authentication/authorization denial or SSE
+  `auth-expired` clears protected observations instead of retaining stale data.
+- `/demo` uses both the normal proxy cookie gate and database-backed server
+  `AuthGate`. Missing cookies redirect to sign-in; forged/revoked sessions cannot
+  receive the synthetic office. Authentication never turns demo observations
+  into live data or opens a telemetry subscription.
+
+### Browser verification
+
+Install the dev-only browser with `npx playwright install chromium`, then run
+`npx vitest run --config vitest.e2e.config.mts tests/e2e/office-browser.test.ts`.
+The suite builds/starts a disposable fixture-backed server. No prompt or mutation
+is sent upstream. It checks desktop/mobile interaction, reduced motion, forced
+WebGL failure, demo network isolation, authenticated reads, error behavior,
+hidden rendering, and synthetic 10-seat/2-room/2-event-s and
+100-seat/10-room/20-event-s invalidation workloads. Screenshots and measurements
+are written to `/tmp/opencode/living-office/review-fixes/browser/` (the original
+implementation measurements remain in `/tmp/opencode/living-office/browser/`).
+
+The reference validation environment is a headless Linux VM using Chromium
+SwiftShader, **not a target GPU/device**. RAF intervals and browser main-thread
+task time are proxies, not GPU frame timings or per-frame application CPU.
+Actual-device performance and screen-reader verification remain outstanding.
+
+2026-10-16 software-rendered sample (10-second windows, active synthetic DTO
+changes, 1440×1050 viewport, DPR 1):
+
+| Seats / rooms / events per second | Local cold scene | RAF p95 / p99 | >50 ms | Draw calls / triangles | Main-thread task time over 10 s |
+| --- | --- | --- | --- | --- | --- |
+| 10 / 2 / 2 | 733 ms | 16.8 / 16.8 ms | 0.34% | 44 / 12,176 | 768 ms |
+| 100 / 10 / 20 | 587 ms | 16.8 / 16.8 ms | 0.17% | 68 / 42,284 | 1,144 ms |
+
+These are one-run observations, not release guarantees or a baseline on actual
+hardware. The 100-seat view culls offscreen geometry. A simulated hidden document
+added zero rendered frames over 30 seconds after a one-second settling window.
+Twenty button-to-two-RAF samples had p95 33 ms and max 310.2 ms; that proxy is
+not a true interaction-to-paint measurement. Per-frame app CPU and GPU timings
+remain unmeasured. Procedural scene assets require zero downloaded model/texture
+bytes; JavaScript bundles are a separate cost.
+
+## Architecture
+
+Two processes, one SQLite database, one writer.
+
+```
+                       ┌───────────────────────────┐
+   upstream OpenCode ──│ collector (GET only)      │
+   127.0.0.1:4096      │  · owns a fenced lease    │
+                       │  · reconciles + normalizes │
+                       └─────────────┬─────────────┘
+                                     │ writes
+                              ┌──────▼──────┐
+                              │   SQLite    │  WAL, one filesystem
+                              └──────┬──────┘
+                                     │ reads
+                       ┌─────────────▼─────────────┐
+   browser ──────────▶ │ web (Next.js)             │
+   (same origin only)  │  · owner auth (fail closed)│
+                       │  · read-only JSON API      │
+                       │  · SSE from change log     │
+                       └───────────────────────────┘
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **`web`** serves pages and a read-only JSON API, and is the only thing the
+  browser talks to. It never contacts upstream, and it has no code path that can.
+- **`collector`** is the only writer. It owns a lease in the database so exactly
+  one collector can write, and **every** write it makes — observations *and* its
+  own metadata (state, checkpoints, gaps) — is fenced by that lease inside the
+  same transaction as the write. A stale collector therefore cannot commit
+  anything, and cannot overwrite the current collector's state. The lease is
+  heartbeated while a cycle runs, so a long reconcile does not expire its own
+  lease mid-run.
+- **`SQLite`** in WAL mode on a single filesystem, so readers are not blocked by
+  the writer.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Why reconciliation instead of the event stream
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The upstream event stream is documented as experimental and no exact replay
+guarantee has been verified. Consuming it as the source of truth would let a
+disconnect silently drop activity. Instead the collector re-reads the
+authoritative session and message records each cycle; writes are idempotent, so a
+disconnect costs freshness rather than data.
 
-## Learn More
+Coverage is measured from the last cycle that **succeeded**, never from the last
+attempt, so a sustained outage cannot keep resetting the clock. A window that
+cannot be proven covered is recorded as a **gap** and shown on `/status`:
 
-To learn more about Next.js, take a look at the following resources:
+- a gap is **opened** on the first failure (or when a pause exceeds the tolerance,
+  or when a lease handover is detected) and stays open across repeated failures;
+- it is **closed** only once a cycle genuinely succeeds, at which point it is
+  marked resumed. A gap is never marked resumed before success.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Two further consequences of a bounded fetch:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Older roots survive.** The run forest is rebuilt from every *stored* session,
+  not just the sessions inside the current fetch window, so a run whose root has
+  aged out of the window keeps its identity and its ancestry.
+- **A partial transcript is never destructive.** If the message paging bound is
+  reached while upstream still has more to give, existing activity is preserved
+  rather than replaced, the checkpoint keeps the cursor to continue from, and the
+  stream is flagged `partial`. Activity is only replaced on a complete snapshot.
 
-## Deploy on Vercel
+See `docs/opencode-compatibility.md`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Quick start (fixture mode, no upstream needed)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+# 1. Install dependencies (Bun is the pinned package manager).
+bun install
+
+# 2. Configure. The owner password is required: the app fails closed without it.
+cp .env.example .env
+#    Set ORCH_OWNER_PASSWORD in .env for the first run, or generate a hash:
+#      npm run auth:hash
+#    Set ORCH_UPSTREAM_MODE=fixture to explore without an upstream instance.
+
+# 3. Apply migrations (optional: both processes migrate on startup).
+npm run migrate
+
+# 4. Collect once from the fixtures.
+npm run collector:once
+
+# 5. Run the app.
+npm run dev            # development
+# or
+npm run build && npm start
+```
+
+Then open <http://localhost:3000> and sign in with the owner password.
+
+Fixture mode is labelled in the UI, so fixture data can never be mistaken for
+evidence about a live instance.
+
+> **`.env` is loaded by every entrypoint.** Next.js reads `.env` itself, and the
+> Node scripts (`migrate`, `collector`, `collector:once`, `auth:hash`) are run
+> with `--env-file-if-exists=.env`. This matters: without it the collector and the
+> web server would resolve *different* databases and the dashboard would show
+> nothing. A missing `.env` is not an error — the scripts fall back to the
+> documented defaults — but the file must be present for the quickstart to point
+> both processes at the same database. `tests/e2e/quickstart.test.ts` runs this
+> exact sequence and asserts both processes agree on one database.
+
+> **The build does not touch the database.** `next build` writes no data
+> directory and creates no database file. That is deliberate: the data directory
+> may be unwritable at build time, and a build that opened the database would
+> fail there.
+
+## Pointing at a real instance
+
+```bash
+ORCH_UPSTREAM_MODE=live
+ORCH_UPSTREAM_BASE_URL=http://127.0.0.1:4096
+ORCH_UPSTREAM_USERNAME=...
+ORCH_UPSTREAM_PASSWORD=...
+```
+
+- Credentials are read from the **environment only**. This application never
+  reads a credential file, so it will not read `/etc/opencode.env`.
+- Plain `http` is accepted only for loopback or a private/`.local` host; anything
+  else must be `https`.
+- The collector reports a missing or rejected credential explicitly (401 from
+  upstream) rather than retrying silently.
+- The web process needs no upstream configuration at all.
+- **Switching modes does not relabel existing data.** Runs and events carry the
+  provenance they were *observed* with, so a fixture demo stays marked as a
+  fixture when the collector is pointed at a live instance. If you want a clean
+  live view, point `ORCH_DB_PATH` at a fresh database rather than reusing the demo
+  one; the two provenances are never blended into one run.
+
+> **Verification status.** In this repository's development environment the
+> upstream instance returned `401` to every unauthenticated request, and its
+> credential file must not be read, so **no live smoke test was performed**. All
+> behaviour is verified against local fixtures shaped to the published API spec,
+> and the code validates every upstream payload at runtime. No live integration
+> is claimed.
+
+## Deployment
+
+`Dockerfile`, `docker-compose.yml`, `deploy/Caddyfile`, and `.env.example` are
+provided. No production systemd unit, Caddy configuration, or global agent was
+modified by this repository.
+
+```bash
+cp .env.example .env      # then edit it
+docker compose -p opencode-opencode-orchestration-ui up -d --build
+```
+
+The compose project is named `opencode-opencode-orchestration-ui` so its
+containers, network, and volumes cannot collide with anything else on the host.
+
+### Reaching a loopback upstream (important)
+
+The host OpenCode instance binds `127.0.0.1:4096`. **A container on a Docker
+bridge network cannot reach a service that listens only on the host's
+`127.0.0.1`.** Inside the container, `127.0.0.1` is the container itself, and
+adding a `host.docker.internal:host-gateway` alias does not help, because the
+listener is not bound to the bridge interface.
+
+Choose one of these, in order of preference:
+
+1. **Run the collector on the host** and only the web server in Docker, with
+   `ORCH_DATA_DIR` on a host directory bind-mounted into the container. This
+   needs no change to the upstream bind address and keeps the security posture
+   intact.
+2. **Give the collector host networking** (`network_mode: host` on the
+   `collector` service) and leave the web service on the bridge. The collector
+   then sees the host's loopback.
+3. **Bind the upstream instance to a private interface** (for example
+   `--hostname 0.0.0.0` or a specific LAN address) and point
+   `ORCH_UPSTREAM_BASE_URL` at it, with `ORCH_UPSTREAM_USERNAME` /
+   `ORCH_UPSTREAM_PASSWORD` set. This changes the upstream's exposure, so treat
+   it as a deliberate security decision and confirm credentials are required.
+
+Options 2 and 3 change networking or upstream exposure; option 1 changes neither.
+
+### Reverse proxy
+
+The SSE endpoint needs response buffering disabled. The example Caddyfile sets
+`flush_interval -1` for exactly that reason; without it the browser receives
+nothing until the stream ends. The application also rotates the stream
+(`ORCH_SSE_MAX_MS`) and the client resumes from its last sequence number, so a
+proxy that closes long connections is not a problem.
+
+Set `ORCH_PUBLIC_ORIGIN=https://<hostname>` so the application's same-origin
+check accepts requests arriving on the public hostname.
+
+### Backup, migration, upgrade
+
+- **Backup.** The database is a single file. Use SQLite's online backup rather
+  than copying the file while it is in use:
+  `sqlite3 /data/orchestration.sqlite ".backup '/backup/orch-$(date +%F).sqlite'"`.
+  A plain file copy is safe only while both processes are stopped.
+- **Migration.** Both processes apply pending migrations on startup, guarded by a
+  row lock, so concurrent starts are safe. Run `npm run migrate` to migrate
+  explicitly (for example in an init container). Applied migrations are
+  checksummed and immutable: modifying one is a hard error, not a silent
+  divergence.
+- **A migration that carries a data step is identified by a version, not only by
+  its SQL.** Some migrations do their work in JavaScript rather than SQL — a
+  repair of rows an earlier build wrote. Such a step has no SQL for a checksum to
+  cover, so from version 4 on it must also declare a `dataStepVersion`, which is
+  folded into the migration's checksum. The consequence is a rule, not a detail:
+  **a data step's behaviour may only change by shipping a new migration version.**
+  Editing an applied step in place would leave its recorded identity unchanged and
+  an already-migrated database would silently keep the old behaviour; bumping the
+  `dataStepVersion` of a step that has not shipped yet moves the checksum instead.
+  Migrations 1–3 predate the rule and keep the original statements-only checksum,
+  so a database that already applied them still starts.
+- **Schema version 2** adds the columns that back the collection-honesty rules:
+  `collector_state.last_success_at`, `collector_checkpoints.partial`,
+  `agents.active`, and `collection_gaps.open`. The upgrade is additive and is
+  covered by `tests/integration/migration-upgrade.test.ts`, which builds a
+  version-1 database, populates it, upgrades it, and asserts both the new columns
+  and the defaults chosen for pre-existing rows. The defaults are deliberate:
+  an old checkpoint counts as complete (it made no partial claim), an old agent
+  counts as effective (it was effective when stored), and an old gap counts as
+  closed (the previous build had already marked it resumed).
+- **Schema version 3** is schema-neutral: it re-runs the redactor over text an
+  earlier build persisted before it recognised camelCase secret keys
+  (`accessToken`, `refreshToken`, `clientSecret`). Redaction is idempotent, so the
+  migration rewrites only rows that still contain a credential-shaped value and
+  leaves every other field — and every row — untouched. No history is deleted:
+  the repair exists because a credential already written to the database cannot
+  be removed by fixing the redactor alone. The upgrade path is covered by the
+  same test file, which builds a version-2 database containing camelCase secrets,
+  upgrades it, and asserts they are gone while the surrounding history and the
+  JSON validity of the evidence blob survive. Its data step is **frozen**: the
+  migration has shipped and an installed database skips it, so the field set it
+  covered is preserved exactly and later requirements are expressed as new
+  migrations.
+- **Schema version 4** is the second redaction remediation, and is also
+  schema-neutral. It repairs every retained **display** field — the text the
+  dashboard renders — rather than only the session and activity columns version 3
+  knew about: `activity_events.tool_name` and `actor_agent_id`,
+  `root_runs.title`, `invocations.model_provider_id`/`model_id`,
+  `locations.canonical`, and the diagnostic text on `/status`. It also recognises
+  the credential shapes the redactor now understands — a compound key such as
+  `secretAccessKey`/`SecretKey` in camelCase, PascalCase, or snake_case, and a
+  whole object or array value under a credential key, including nested and
+  double-encoded forms — and it raises `activity_events.redacted` on every event
+  whose display text it rewrites, so the badge matches what the row now shows.
+  The flag is only ever raised, never cleared. Identity and join keys are never
+  touched. The migration runs inside the migration transaction with no collection
+  cycle, so a database whose collector is stopped is still sanitised the moment
+  either process opens it.
+- **Schema version 5** is the third redaction remediation, and is schema-neutral.
+  It exists for two reasons. First, the redactor now redacts a parsed JSON fragment
+  key-aware *before* the scalar rules can rewrite it, so a payload a previous pass
+  left half-redacted — one credential removed, a sibling credential surviving
+  because the scalar rules had made the JSON unparseable — is now fully repaired;
+  version 5 re-runs the repair over version 4's whole column set so an
+  already-migrated database converges on the corrected policy. It can also repair
+  a payload a previous build left malformed in exactly that way, by recovering the
+  bare placeholder the old ordering wrote. Second, it raises
+  `activity_events.redacted` on historical rows that already carry a redaction
+  marker — including rows version 3 repaired, which predate the badge entirely and
+  so were left unflagged even though their text had been rewritten. The badge is
+  **conservative evidence, not proof**: the marker is a literal string, so a
+  message in which someone genuinely typed `[redacted]` is flagged as well. It is
+  only ever raised, never cleared, and no row or field is deleted. Version 4's data
+  step is deliberately left untouched — a behaviour change belongs in a new
+  migration — and version 5's own step carries a `dataStepVersion` folded into its
+  checksum.
+- **Schema version 6** is the fourth redaction remediation, and is schema-neutral.
+  A serialised tool input is a *double-encoded* document: its quotes are escaped
+  (`{\"OPENAI_KEY\":\"…\"}`). The redactor previously knew only the two narrow key
+  shapes in escaped content and could not parse an escaped object at all, so a
+  credential written that way survived — and version 5, which ran before the fix,
+  could not repair it either. The redactor now recognises an escaped document,
+  consumes a whole credential-key value (nested containers included) and never
+  decodes the text it rewrites, so the escaping level and every ordinary sibling
+  survive byte for byte. Version 6 re-runs the same display-column repair with the
+  corrected redactor, so a database that already applied version 5 converges.
+  Version 5's data step is deliberately left untouched — it shipped under its own
+  identity — and version 6's own step carries a `dataStepVersion` folded into its
+  checksum. No row and no field is deleted.
+- **Schema version 7** is the fifth redaction remediation, and is schema-neutral.
+  The escaped-document repair introduced in version 6 had three gaps, each of which
+  let a credential survive in stored text: it checked only values under a
+  credential *key*, so a provider token or `Authorization` header in an ordinary
+  sibling field was never inspected; it read `\"` as a string delimiter
+  unconditionally, so a value containing an escaped quote ended early and its tail
+  survived; and it required an escaped quote inside a container, so a primitive
+  array under a credential key was left whole. The redactor now delimits a value by
+  its decoded grammar, checks every ordinary string value as well, and fails closed
+  on a value it cannot completely delimit. Version 7 re-runs the same display-column
+  repair so a database that already applied version 6 converges. Version 6's data
+  step is left untouched — it shipped under its own identity — and version 7's own
+  step carries a `dataStepVersion` folded into its checksum.
+- **Schema version 8** is the sixth redaction remediation, and is schema-neutral.
+  Four further gaps in the escaped-document repair are closed. An ordinary string
+  value is now inspected **recursively**, because a serialised tool input commonly
+  nests one encoded document inside another and the credential can be in the inner
+  one. The URL-userinfo pattern no longer caps the credential — a longer one used
+  to match nothing and survive verbatim — while the scheme stays bounded so the
+  scan remains linear. A malformed primitive
+  (`{\"password\":123opaque-secret}`) now fails closed instead of being consumed up
+  to its first non-numeric character and leaving the tail with no key in front of
+  it, and a mismatched container (`[1,2}`) is no longer treated as a complete
+  value. The credential-label classifier is deterministic: the trailing run is
+  `(?:[A-Z][A-Za-z0-9]*)?` rather than the ambiguous `(?:[A-Z][A-Za-z0-9]*)*`,
+  which divided a near-miss label exponentially (127 ms at 24 characters). Version
+  8 re-runs the same display-column repair so a database that already applied
+  version 7 converges. Version 7's data step is left untouched — it shipped under
+  its own identity — and version 8's own step carries a `dataStepVersion` folded
+  into its checksum.
+- **Schema version 9** is the seventh redaction remediation, and is schema-neutral.
+  Two further gaps are closed. A content containing an escaped quote used to be
+  treated as fully inspected, so the **plaintext** around the quoted phrase —
+  `say \"hi\" ghp_…`, `password=… and \"quoted\"` — was never checked and the
+  credential survived; a fragment is now only reported as handled once every span
+  has been checked, with the plaintext going through the scalar rules. And the
+  camelCase credential-label classifier is a **linear parser** rather than a
+  regular expression whose leading run and trailing suffix overlapped, so a
+  near-miss label such as `"aSecretX".repeat(20_000)` no longer costs seconds and
+  grows quadratically; the three camelCase scalar rules are linear passes for the
+  same reason. Version 9 re-runs the same display-column repair so a database that
+  already applied version 8 converges. Version 8's data step is left untouched — it
+  shipped under its own identity — and version 9's own step carries a
+  `dataStepVersion` folded into its checksum.
+- **Schema version 10** is the eighth redaction remediation, and is schema-neutral.
+  Two further gaps are closed. The content of an ordinary escaped string now goes
+  through the whole **escaped-level pipeline** rather than the scalar rules alone,
+  so a credential *assignment* inside it is found and its value consumed whether
+  that value is an escaped string (`password=\"…\"`), a container
+  (`password=[17,23,42,91]`) or a bare token — the scalar rules understand none of
+  those. And **every** credential-label classifier is now a **linear parser**: the
+  separator-delimited and environment-style shapes each had repetitions that
+  overlapped around a word alternation, so a repeated label such as
+  `"api_key."×n` cost seconds and grew quadratically; the camelCase shape was
+  already a parser. The rules built on them — quoted, bare and escaped key/value —
+  are linear passes for the same reason. Version 10 re-runs the same display-column
+  repair so a database that already applied version 9 converges. Version 9's data
+  step is left untouched — it shipped under its own identity — and version 10's own
+  step carries a `dataStepVersion` folded into its checksum.
+- **Schema version 11** is the ninth redaction remediation, and is schema-neutral.
+  It completes the escaped-level **assignment grammar**. A credential assignment
+  inside a decoded string is recognised with a **quoted label** and either separator
+  (`'password': [1,2]`, `"api_key"=[9,9]`), not only a bare label; a **bare value
+  that contains brackets** is consumed whole rather than stopping at the first `[`,
+  so `password=correct[42]horse` no longer leaves `[42]horse` behind with no key in
+  front of it; a **container value must be well formed and followed by a valid
+  boundary**, so a mismatched closer (`password=[1,2}`) and a container followed by
+  a suffix (`password=[1,2]opaque-suffix`) both fail closed instead of being
+  accepted as a complete value; and a **separator-only run** is advanced as a unit
+  rather than rescanned one character at a time, which was quadratic (twenty seconds
+  for 40 000 characters). A container is no longer marked inspected before its
+  descendants are, so a bare token inside it stays visible to the scalar complement
+  pass — the walk owns only the spans it actually inspected. Version 11 re-runs the
+  same display-column repair so a database that already applied version 10
+  converges. Version 10's data step is left untouched — it shipped under its own
+  identity — and version 11's own step carries a `dataStepVersion` folded into its
+  checksum.
+- **Schema version 12** is the tenth redaction remediation, and is schema-neutral.
+  It closes three gaps in the escaped-level walker. First, **a value boundary must
+  be complete**: a closing quote or bracket proves only that the delimited segment
+  ended, not that the assignment did, so `password=""opaque-live-value` and
+  `{\"password\":\"abc\"opaque-live-value}` now fail closed instead of redacting the
+  delimited part and stranding the continuation with no key in front of it, while a
+  clearly terminated assignment (`password="opaque-value"`) is preserved. Second, a
+  **credential key carrying an escape the decoder cannot resolve** — such as
+  `\uXXXX`, where `{\"access\u0054oken\":\"…\"}` is the escaped spelling of
+  `accessToken` — is classified **conservatively sensitive**, so the value is
+  removed whole and the raw key spelling is left byte for byte; the key decoder
+  itself is unchanged. Third, the walk descends into **nested nonsensitive
+  containers in a single forward pass** with a matching stack, so each container is
+  visited once rather than once per enclosing level; every operation is charged to
+  the shared work budget, the container depth is counted explicitly, and a
+  malformed or over-budget scan fails closed. Version 12 re-runs the same
+  display-column repair so a database that already applied version 11 converges.
+  Version 11's data step is left untouched — it shipped under its own identity — and
+  version 12's own step carries a `dataStepVersion` folded into its checksum.
+- **Schema version 13** is the eleventh redaction remediation, and is schema-neutral.
+  It closes five further gaps. A container value's **ordinary quoted string** is now
+  skipped like the escaped form, so a brace inside it no longer closes the container
+  early — `password={"value":"},opaque-live-value"}` used to end the value at the
+  brace and strand the tail. The key before a structured value is found by a
+  **bounded backward walk** rather than an unanchored pattern over the whole
+  preceding text, so a long non-matching prefix before a valid fragment is linear
+  instead of quadratic (100 000 characters took hundreds of milliseconds) and its
+  work is charged to the pass budget. A key carrying an escape hidden **one layer
+  deeper** — `{"access\\u0054oken":"…"}`, which is `accessToken` written with an
+  escaped unicode escape — is classified **conservatively sensitive** at every
+  decoding layer, so its value is removed whole and the raw key spelling is
+  preserved. A **bare assignment with a quoted continuation**
+  (`password=prefix"opaque-demo-suffix"`) fails closed instead of redacting the
+  prefix and stranding the quoted part. And the **private-key block** rule is a
+  bounded linear delimiter pass that fails closed on an incomplete block, rather
+  than a pattern whose label run was retried from every position (880 000 characters
+  of repeated `-----BEGIN PRIVATE KEY` took over three seconds). Version 13 re-runs
+  the same display-column repair so a database that already applied version 12
+  converges. Version 12's data step is left untouched — it shipped under its own
+  identity — and version 13's own step carries a `dataStepVersion` folded into its
+  checksum.
+- **Schema version 14** is the twelfth redaction remediation, and is schema-neutral.
+  It closes two gaps. The bounded preceding-key lookup is now **three-valued**: it
+  reports `unresolved` when its bound was reached before the absence of a key could
+  be proved, and the caller fails closed on that answer, so a long key or a long
+  whitespace run before a valid fragment no longer hides the credential key and
+  leaves the value in the text (the lookup used to answer "no key" and the value
+  survived). And the **partial redaction an older build wrote** is recognised and
+  failed closed: that build redacted a credential container by stopping at a brace
+  inside its quoted string, so `password={"value":"},opaque-live-value"}` was stored
+  as `password=[redacted],opaque-live-value"}`, which the current redactor accepted
+  as a complete value followed by a valid `,`. Version 14 re-runs the same
+  display-column repair so a database that already applied version 13 converges.
+  Version 13's data step is left untouched — it shipped under its own identity — and
+  version 14's own step carries a `dataStepVersion` folded into its checksum.
+- **Schema version 15** is the thirteenth redaction remediation, and is
+  schema-neutral. It corrects two things in version 14's legacy-partial-artifact
+  recovery. Recovery now consumes the **entire** leaked remainder: whitespace is not
+  a reliable boundary, and the leaked suffix may begin with or contain one, so
+  `password=[redacted],first opaque-secret-suffix` and
+  `password=[redacted], multi word suffix` no longer leave their tails behind (14
+  stopped at the first space, or skipped entirely when the comma was followed by
+  one). And recovery only runs when the text is **not** recoverable structured
+  JSON, so a valid document that merely carries a bare placeholder value —
+  `{"password":[redacted],"region":"us-east-1"}` — keeps its siblings and structure
+  instead of having them deleted; the structural pass repairs the placeholder, and
+  the bare-marker repair now covers `[redacted:uninspected]` as well. The
+  `[redacted:uninspected]` marker left by version 14's partial consumption is
+  recognised the same way. Version 15 re-runs the same display-column repair so a
+  database that already applied version 14 converges. Version 14's data step is left
+  untouched — it shipped under its own identity — and version 15's own step carries
+  a `dataStepVersion` folded into its checksum.
+- **Schema version 16** is the fourteenth redaction remediation, and is
+  schema-neutral. It makes the legacy-partial-artifact recovery a **single bounded
+  forward pass**. Version 15's recovery located the next marker with two `indexOf`
+  calls per iteration, so marker-heavy text — `"[redacted] ".repeat(N)` — re-scanned
+  the whole remaining suffix every time a marker turned out not to be an artifact:
+  352 000 characters took most of a second and a 16 MiB field could stall a
+  collector cycle. Its work was also omitted from the shared scan budget. Recovery
+  now walks the text once with a monotonic cursor, charges every character it
+  examines to the same allowance the structural pass uses, and **fails closed** when
+  that allowance is exhausted. The stored shapes are recovered identically — the
+  same artifacts are failed closed and the same JSON siblings preserved — so this
+  step exists to bring a database that applied version 15 onto the current code and
+  to repair any row a version-15 build left unconverted. Version 15's data step is
+  left untouched — it shipped under its own identity — and version 16's own step
+  carries a `dataStepVersion` folded into its checksum.
+- **Schema version 17** is the fifteenth redaction remediation, and is schema-neutral.
+  It closes two gaps in version 16. Recovery ran whenever the **whole** stored value
+  failed to parse, so recoverable JSON **embedded in prose** was consumed:
+  `config {"password":[redacted],"region":"us-east-1"}` lost `region` and everything
+  after it. Recovery now **skips a recoverable JSON container**, so the structural
+  pass repairs its bare markers and preserves its siblings and the surrounding text,
+  while a genuine malformed artifact is still failed closed. And the recovery's scan
+  is now charged to the shared budget **whether or not it changed the text** — passing
+  it only on a change gave an unchanged marker-heavy value a fresh structural budget
+  and under-reported the total — so the combined work fails closed when it exceeds the
+  allowance. Version 17 re-runs the same display-column repair so a database that
+  already applied version 16 converges. Version 16's data step is left untouched — it
+  shipped under its own identity — and version 17's own step carries a
+  `dataStepVersion` folded into its checksum.
+- **Schema version 18** is the sixteenth redaction remediation, and is schema-neutral.
+  It makes the assignment key lookup examine the key **whole**. The lookup kept only
+  the **last** 64 characters of a key run, so a long credential key whose sensitive
+  prefix was earlier was read as a non-credential suffix:
+  `password.` + `z`.repeat(64) + `="prefix[42]suffix"` was never consumed as an
+  assignment, and its quoted value was split around the `[42]` inside it, so the whole
+  credential survived in the stored text. The bound is now generous enough for a
+  realistic compound label, and a run that reaches it and **may continue fails
+  closed** rather than being classified from a truncated suffix — a truncated suffix
+  is never classified. Version 18 re-runs the same display-column repair so a database
+  that already applied version 17 converges. Version 17's data step is left untouched
+  — it shipped under its own identity — and version 18's own step carries a
+  `dataStepVersion` folded into its checksum.
+- **Redaction fails closed at its bounds.** Redacting a structured payload is
+  bounded so an adversarial value cannot make the pass quadratic: a work budget
+  proportional to the input, a cap on the number of JSON fragments examined, and a
+  recursion-depth cap. The forward walk never rescans whitespace, so a long run of
+  spaces costs the same as any other run of characters. Reaching any bound does
+  **not** silently stop inspecting — the uninspected remainder is replaced by a
+  bounded marker, `[redacted:uninspected]`, and the redacted flag is raised. A
+  recognised assignment whose value cannot be delimited within the remaining
+  budget fails closed the same way, never by consuming a partial token. The scalar
+  rules are bounded too: an unbounded repetition that must be followed by a
+  delimiter makes a rule quadratic, so the URL-userinfo and base64 patterns repeat
+  a capped number of times. The marker
+  is distinct
+  from `[redacted]`: it means "the scan stopped before checking here", not "a
+  credential was recognised and removed". No structurally uninspected text is
+  stored, because a structure the scanner never reached may hold a credential. A
+  credential assignment also owns its whole value, so a value that merely looks
+  like JSON — `password="correct[42]horse"`, `clientSecret='{"value":"…"}'`,
+  `OPENAI_KEY='{"value":"…"}'` — is removed as a unit rather than split at the
+  brace or bracket inside it. The same label classification decides whether a
+  JSON *property name* is a credential, so `{"OPENAI_KEY":"…"}` is masked exactly
+  like `OPENAI_KEY="…"`, including a whole object or array value under the name.
+- **Upgrade.** Rebuild the image, then restart the collector first and the web
+  server second. A collector that dies without a clean shutdown is replaced after
+  `ORCH_LEASE_TTL_MS`, and the handover window is recorded as a gap rather than
+  being hidden.
+- **Rollback.** The schema is additive; a previous image can read a newer
+  database only if no migration has been applied that it does not know about.
+  Otherwise it refuses to start, which is the intended behaviour. Restore from
+  backup to roll back a migration.
+
+## Development
+
+```bash
+npm run typecheck   # next typegen && tsc --noEmit
+npm run lint        # eslint over application and test code (see note)
+npm run lint:all    # eslint over the whole repository, including vendored files
+npm run build
+npm test            # unit + integration tests
+npm run test:e2e    # builds, starts a real server, drives it over HTTP
+npm run verify      # all of the above, in order
+```
+
+### A note on `npm run lint`
+
+`npm run lint` is scoped to the code this project owns: `app`, `components`,
+`lib`, `scripts`, `proxy.ts`, `tests`, and the Vitest configs. That scope passes
+cleanly.
+
+`npm run lint:all` lints the entire repository, and reports pre-existing errors
+in `.opencode/skills/**/*.cjs` — vendored skill scripts that ship with the
+repository and are not part of this application. Those files were not modified
+and their errors are a pre-existing baseline, not a regression. The scoped script
+exists so a green lint result means something about this project's own code;
+`lint:all` remains available to see the full picture.
+
+### Tests
+
+| Suite | What it covers |
+| --- | --- |
+| `tests/unit` | Redaction and truncation (including **camelCase and compound secret keys** — `accessToken`, `secretAccessKey`, `SecretKey` — in raw/quoted/escaped forms, **whole object and array values under a credential key**, key-aware structured redaction, quoted/escaped JSON keys, quoted env values, idempotency, bounded scan), normalization (identity, dedupe, ordering, the invocation rule, outcome attribution, **per-run provenance derivation and the fixture/upstream partition**), **same-origin `?next=` validation**, payload validation (**including a structured tool input redacted before it is serialised**), config validation, password hashing, CSRF/origin, cookie policy, throttle identity, display formatting |
+| `tests/integration` | Lease fencing and epoch takeover across two connections, **lease heartbeating through a cycle longer than the TTL**, **fenced collector metadata (a stale collector cannot overwrite state or checkpoints)**, migration safety, **the v1 → v2, v2 → v3, v3 → v4, v4 → v5 and v5 → v6, v6 → v7, v7 → v8, v8 → v9 and v9 → v10 upgrade paths (including camelCase-redaction reprocessing, the frozen v3 data step, the versioned data-step checksum, v4 repairing every display field and raising the activity `redacted` badge without a collection cycle, v5 converging stored data on the corrected redaction policy and flagging historical rows v3 repaired, v6 repairing a stored escaped (double-encoded) credential a pre-fix v5 left behind, v7 repairing an escaped sibling token, an escaped-quote value tail and a primitive array a pre-fix v6 left behind, v8 repairing a nested encoded document, an over-long URL userinfo and a malformed escaped primitive a pre-fix v7 left behind, v9 repairing a credential in the plaintext beside an escaped quoted phrase a pre-fix v8 left behind, and v10 repairing a credential assignment inside an escaped string a pre-fix v9 left behind)**, restart persistence, write idempotency, the change log, the collector against fixtures (orphans, cross-location links, duplicate pages, unknown message types, secrets, gap open/resume lifecycle, **partial transcripts**, **agent deactivation**, **run-reference reconciliation across a rebuilt hierarchy**, **provenance across a source switch**), auth session lifecycle |
+| `tests/architecture` | No client module can reach the upstream adapter or the database; only sign-in/sign-out export a mutating method; the upstream adapter is GET-only; no credential file is read; no `NEXT_PUBLIC_` variable exists |
+| `tests/e2e` | A real production build served by `next start`: the auth boundary, the read API, SSE resume, **SSE termination on session revocation**, **the accepted `since` cursor range**, redaction, restart persistence, fail-closed behaviour without a credential, and **the documented quickstart sequence run through the npm scripts** |
+
+Regression coverage for each review finding lives in
+`tests/integration/review-findings.test.ts`, which names the defect each block
+pins down.
+
+The HTTP E2E suite drives the server with Node's built-in `fetch`.
+`tests/e2e/office-browser.test.ts` additionally uses dev-only Playwright Chromium
+for rendered office interaction, fallback, responsiveness, screenshots and
+software-rendered workload measurements (see Browser verification above).
+The legacy quickstart suite reads/backs up a repository `.env`; it was not run
+in the living-office pass because credential-file access is prohibited. Run it
+only in a separate disposable checkout containing exclusively synthetic config.
+
+## Operational notes
+
+- **Fail closed.** With no owner credential configured, protected data access
+  fails closed and the API reports `503`. There is no anonymous live-data
+  fallback. `/demo` also requires an owner session, even though its records are synthetic.
+- **One owner.** Sign-in is a single password. Sessions are opaque 256-bit
+  tokens, stored only as a SHA-256 digest, revocable server-side, and carried in
+  an HttpOnly, SameSite=Lax cookie that is marked `Secure` whenever the
+  deployment is reachable over https.
+- **Login throttle.** Failed sign-ins are throttled. The bucket key is **not**
+  derived from client-supplied input: by default every attempt shares one
+  owner-wide bucket, so an attacker cannot rotate a header to escape the limit.
+  `ORCH_TRUST_PROXY_HEADERS=true` opts into per-client buckets from
+  `X-Forwarded-For`, and must only be set behind a reverse proxy that overwrites
+  the header. When it is set, the **last** forwarded entry is used, because that
+  is the value the proxy itself appended.
+- **CSRF.** State-changing requests are rejected without a same-origin `Origin`
+  header, and cross-site `Sec-Fetch-Site` values are refused before the origin is
+  even read. There are only two such endpoints: sign-in and sign-out.
+- **Live updates.** The dashboard's change stream is served from this
+  application's own durable change log, and the session is re-validated while the
+  stream is open. Revoking or expiring the session ends the stream with an
+  `auth-expired` event, so an already-open connection cannot keep receiving data.
+  The `since` cursor accepts the full safe-integer range of the log's sequence
+  column rather than an arbitrary cap.
+- **Bounded, redacted history.** Stored content is capped
+  (`ORCH_CONTENT_MAX_CHARS`) and credential-shaped strings are replaced before
+  storage. The redactor recognises separator-delimited (`api_key`), camelCase
+  (`accessToken`, `refreshToken`, `clientSecret`) and compound (`secretAccessKey`,
+  `SecretKey`) key forms, in raw, quoted, escaped, and double-encoded content, and
+  redacts a structured payload by key as well as by value — an opaque token under
+  a credential-named key has nothing else to match on, and a whole object or
+  array under such a key is replaced rather than left behind. Redaction and
+  truncation are shown as badges, so a reader knows the text is incomplete.
+- **Untrusted text.** All upstream-derived text is rendered as escaped React text
+  children, never as HTML.
+- **Provenance is per observation.** Every run carries the provenance of the
+  session it was built from, never the collector's current mode, so a fixture
+  demo cannot be relabelled `observed upstream` when the collector is later
+  pointed at a live instance. A parent link that crosses a fixture/upstream
+  boundary is not followed, so the two are never blended into one run; the link is
+  reported as a warning instead.
+- **Run references follow the hierarchy.** When a rebuild moves a session between
+  runs — most visibly when a child first observed without its parent is later
+  attached to it — the retained activity events and invocations are repointed at
+  the run the session now belongs to, in the same transaction as the rebuild.
+  Records for sessions outside the current fetch window, and rows a partial
+  transcript did not re-read, are repointed too; no evidence is recreated or
+  deleted.
+- **Bounded history.** At most `ORCH_HISTORY_MAX_SESSIONS` sessions are
+  reconciled per cycle, and the retained activity window is shown on the
+  overview. A stream that the paging bound cut short is flagged `partial` on
+  `/status`, with the cursor it will continue from.
+- **Agent history.** The agent registry reflects the latest **successful** API
+  snapshot per location. An agent the API stops reporting is marked inactive and
+  shown as "no longer reported" rather than deleted, so the invocations already
+  attributed to it keep their attribution.
+- **Collector liveness.** `/status` and the overview report `running`, `stale`,
+  `stopped`, or `never-started`. Liveness comes from the lease, not from a state
+  row, so a cleanly stopped collector is reported as stopped rather than running.
+  The last successful collection time is shown separately from the last attempt.
+
+## Scope
+
+Implemented: dynamic effective-agent discovery, root runs, an evidence-backed
+invocation and session graph, details and timelines, historical browsing,
+reliable collection with reconnect and gap state, SQLite persistence with a
+dedicated collector, secure single-owner auth, an isolated synthetic office demo,
+interactive procedural 3D office with equivalent 2D fallback, an evidence
+inspector, and Docker/Compose/Caddy deployment instructions. Both approved manual
+dispatch actions are blocked pending authenticated target-contract verification.
+
+Documented only, with no runtime implementation: the future tracker and
+dispatcher interfaces (`TaskSource`, `TaskAssignment`, `RunLauncher`,
+`DispatchPolicy`, `WorkspaceAllocator`) and the progress contract. See
+`docs/domain-model.md` and `docs/progress-contract.md`.
+
+## Documentation
+
+- `docs/opencode-compatibility.md` — version evidence, what is documented versus
+  verified, authentication, location/session shapes, and the events/gaps decision
+- `docs/domain-model.md` — the vocabulary and the rules that decide which records
+  may be created
+- `docs/progress-contract.md` — how progress is (and is not) represented

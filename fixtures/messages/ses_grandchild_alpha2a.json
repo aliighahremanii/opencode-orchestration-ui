@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "id": "msg_grandchild_alpha2a_0001",
+      "type": "user",
+      "time": {
+        "created": 1760001800000
+      },
+      "text": "Review the fencing change for correctness."
+    },
+    {
+      "id": "msg_grandchild_alpha2a_0002",
+      "type": "assistant",
+      "time": {
+        "created": 1760001860000,
+        "completed": 1760002160000
+      },
+      "agent": "reviewer",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "The check-then-write sequence runs inside BEGIN IMMEDIATE, so the lease cannot be stolen between the check and the commit. Approving."
+        }
+      ],
+      "finish": "stop"
+    },
+    {
+      "id": "msg_grandchild_alpha2a_0003",
+      "type": "idle",
+      "time": {
+        "created": 1760002160000
+      },
+      "outcome": "succeeded"
+    }
+  ],
+  "cursor": {
+    "previous": null,
+    "next": null
+  }
+}

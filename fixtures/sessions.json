@@ -1,0 +1,214 @@
+{
+  "data": [
+    {
+      "id": "ses_root_alpha",
+      "projectID": "prj_demo_workspace",
+      "agent": "build",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "cost": 0.42,
+      "tokens": {
+        "input": 1200,
+        "output": 340,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "time": {
+        "created": 1760000000000,
+        "updated": 1760002520000,
+        "idle": 1760002520000
+      },
+      "title": "Add retry handling to the collector lease",
+      "location": {
+        "directory": "/srv/demo/workspace"
+      },
+      "outcome": "succeeded"
+    },
+    {
+      "id": "ses_child_alpha1",
+      "projectID": "prj_demo_workspace",
+      "agent": "explore",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "cost": 0.42,
+      "tokens": {
+        "input": 1200,
+        "output": 340,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "time": {
+        "created": 1760000180000,
+        "updated": 1760000540000,
+        "idle": 1760000540000
+      },
+      "title": "Locate existing lease code",
+      "location": {
+        "directory": "/srv/demo/workspace"
+      },
+      "parentID": "ses_root_alpha",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "ses_child_alpha2",
+      "projectID": "prj_demo_workspace",
+      "agent": "builder-complex",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "cost": 0.42,
+      "tokens": {
+        "input": 1200,
+        "output": 340,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "time": {
+        "created": 1760000600000,
+        "updated": 1760002280000,
+        "idle": 1760002280000
+      },
+      "title": "Implement lease fencing",
+      "location": {
+        "directory": "/srv/demo/workspace"
+      },
+      "parentID": "ses_root_alpha",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "ses_grandchild_alpha2a",
+      "projectID": "prj_demo_workspace",
+      "agent": "reviewer",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "cost": 0.42,
+      "tokens": {
+        "input": 1200,
+        "output": 340,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "time": {
+        "created": 1760001800000,
+        "updated": 1760002160000,
+        "idle": 1760002160000
+      },
+      "title": "Review fencing change",
+      "location": {
+        "directory": "/srv/demo/workspace"
+      },
+      "parentID": "ses_child_alpha2",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "ses_root_beta",
+      "projectID": "prj_demo_workspace",
+      "agent": "plan",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "cost": 0.42,
+      "tokens": {
+        "input": 1200,
+        "output": 340,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "time": {
+        "created": 1760003600000,
+        "updated": 1760004500000,
+        "idle": 1760004500000
+      },
+      "title": "Design the dispatcher interface (token ghp_titleSecretABCDEFGHIJKLMNOP)",
+      "location": {
+        "directory": "/srv/demo/workspace"
+      },
+      "outcome": "failed"
+    },
+    {
+      "id": "ses_orphan_gamma",
+      "projectID": "prj_demo_workspace",
+      "agent": "scout",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "cost": 0.42,
+      "tokens": {
+        "input": 1200,
+        "output": 340,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "time": {
+        "created": 1760005400000,
+        "updated": 1760005760000,
+        "idle": 1760005760000
+      },
+      "title": "Check upstream API docs",
+      "location": {
+        "directory": "/srv/demo/workspace"
+      },
+      "parentID": "ses_missing_parent_0001"
+    },
+    {
+      "id": "ses_child_crossdelta",
+      "projectID": "prj_demo_other",
+      "agent": "reviewer",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "cost": 0.42,
+      "tokens": {
+        "input": 1200,
+        "output": 340,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "time": {
+        "created": 1760002640000,
+        "updated": 1760003000000,
+        "idle": 1760003000000
+      },
+      "title": "Review in a second checkout",
+      "location": {
+        "directory": "/srv/demo/other-project"
+      },
+      "parentID": "ses_root_alpha"
+    }
+  ],
+  "cursor": {
+    "previous": null,
+    "next": null
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "description": "Deterministic fixture upstream. Shapes match the documented OpenCode v2 HTTP API and are validated by the same runtime validators as live responses.",
+  "referenceNow": 1760000000000,
+  "serverInfo": "server-info.json",
+  "location": "location.json",
+  "agentLists": {
+    "/srv/demo/workspace": "agents/workspace.json",
+    "/srv/demo/other-project": "agents/other-project.json"
+  },
+  "sessions": "sessions.json",
+  "messages": {
+    "ses_root_alpha": "messages/ses_root_alpha.json",
+    "ses_child_alpha1": "messages/ses_child_alpha1.json",
+    "ses_child_alpha2": "messages/ses_child_alpha2.json",
+    "ses_grandchild_alpha2a": "messages/ses_grandchild_alpha2a.json",
+    "ses_root_beta": "messages/ses_root_beta.json",
+    "ses_orphan_gamma": "messages/ses_orphan_gamma.json",
+    "ses_child_crossdelta": "messages/ses_child_crossdelta.json"
+  },
+  "sessionPageSize": 3,
+  "messagePageSize": 4,
+  "faults": {
+    "duplicateMessages": true,
+    "outOfOrderMessages": true,
+    "duplicateSessionPage": true,
+    "unknownMessageType": true
+  },
+  "simulatedGap": {
+    "startedAtOffsetMs": -2700000,
+    "endedAtOffsetMs": -2280000,
+    "reason": "fixture: collector was stopped and the upstream event stream was not replayable"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "directory": "/srv/demo/workspace",
+  "project": {
+    "id": "prj_demo_workspace",
+    "directory": "/srv/demo/workspace",
+    "canonical": "/srv/demo/workspace"
+  }
+}

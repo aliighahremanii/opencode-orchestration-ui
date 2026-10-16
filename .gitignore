@@ -24,6 +24,12 @@
 .DS_Store
 *.pem
 
+# local runtime data (default ORCH_DATA_DIR)
+/.orch-data
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
 # debug
 npm-debug.log*
 yarn-debug.log*

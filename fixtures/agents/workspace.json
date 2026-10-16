@@ -1,0 +1,119 @@
+{
+  "location": {
+    "directory": "/srv/demo/workspace"
+  },
+  "data": [
+    {
+      "id": "build",
+      "name": "build",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "request": {
+        "headers": {}
+      },
+      "system": "",
+      "description": "Default implementation agent",
+      "mode": "primary",
+      "hidden": false,
+      "permissions": {}
+    },
+    {
+      "id": "plan",
+      "name": "plan",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "request": {
+        "headers": {}
+      },
+      "system": "",
+      "description": "Planning agent that writes plans before implementation",
+      "mode": "primary",
+      "hidden": false,
+      "permissions": {}
+    },
+    {
+      "id": "explore",
+      "name": "explore",
+      "model": {
+        "id": "claude-haiku-4-5",
+        "providerID": "anthropic"
+      },
+      "request": {
+        "headers": {}
+      },
+      "system": "",
+      "description": "Read-only codebase exploration",
+      "mode": "subagent",
+      "hidden": false,
+      "permissions": {}
+    },
+    {
+      "id": "scout",
+      "name": "scout",
+      "model": {
+        "id": "claude-haiku-4-5",
+        "providerID": "anthropic"
+      },
+      "request": {
+        "headers": {}
+      },
+      "system": "",
+      "description": "External documentation research",
+      "mode": "subagent",
+      "hidden": false,
+      "permissions": {}
+    },
+    {
+      "id": "builder-complex",
+      "name": "builder-complex",
+      "model": {
+        "id": "claude-opus-4-1",
+        "providerID": "anthropic"
+      },
+      "request": {
+        "headers": {}
+      },
+      "system": "",
+      "description": "High-risk implementation specialist",
+      "mode": "subagent",
+      "hidden": false,
+      "permissions": {}
+    },
+    {
+      "id": "reviewer",
+      "name": "reviewer",
+      "model": {
+        "id": "claude-sonnet-4-5",
+        "providerID": "anthropic"
+      },
+      "request": {
+        "headers": {}
+      },
+      "system": "",
+      "description": "Independent change review",
+      "mode": "subagent",
+      "hidden": false,
+      "permissions": {}
+    },
+    {
+      "id": "internal-audit",
+      "name": "internal-audit",
+      "model": {
+        "id": "claude-haiku-4-5",
+        "providerID": "anthropic"
+      },
+      "request": {
+        "headers": {}
+      },
+      "system": "",
+      "description": "Hidden internal agent. Configured with {\"api_key\":\"desc-secret-value-xyz\"} in the registry.",
+      "mode": "all",
+      "hidden": true,
+      "permissions": {}
+    }
+  ]
+}
