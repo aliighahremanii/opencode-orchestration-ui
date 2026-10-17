@@ -1,10 +1,12 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   OWNER_PASSWORD,
   REPO_ROOT,
   buildApp,
+  getTestAppDirectory,
+  assertIsolatedDotenvReads,
   http,
   login,
   freePort,
@@ -33,21 +35,20 @@ import { expectedSchemaVersion } from "../../lib/db/migrations.ts";
  * environment, so anything the processes see must have come from `.env`.
  */
 
-const ENV_PATH = path.join(REPO_ROOT, ".env");
-const ENV_BACKUP_PATH = path.join(REPO_ROOT, ".env.e2e-backup");
-const DEFAULT_DB_PATH = path.join(REPO_ROOT, ".orch-data", "orchestration.sqlite");
-
-/** Restore whatever `.env` state existed before this suite ran. */
-function restoreEnvFile(): void {
-  if (existsSync(ENV_BACKUP_PATH)) {
-    writeFileSync(ENV_PATH, readFileSync(ENV_BACKUP_PATH, "utf8"));
-    rmSync(ENV_BACKUP_PATH, { force: true });
-  } else {
-    rmSync(ENV_PATH, { force: true });
-  }
-}
+// Never read, copy or temporarily replace the developer's credential file.
+const sandbox={dir:getTestAppDirectory()};
+const ENV_PATH = path.join(sandbox.dir, ".env");
+const DEFAULT_DB_PATH = path.join(sandbox.dir, ".orch-data", "orchestration.sqlite");
+beforeAll(async()=>{
+  await buildApp();
+},300000);
 
 describe("quickstart .env configuration", () => {
+  it("builds in an application copy containing only synthetic dotenv, without checkout symlinks",()=>{
+    expect(sandbox.dir.startsWith("/tmp/opencode/orchestration-workspace-reset/review-fixes/e2e/")).toBe(true);
+    expect(readFileSync(ENV_PATH,"utf8")).toBe("ORCH_E2E_DOTENV_CANARY=synthetic-sandbox-only\n");
+    assertIsolatedDotenvReads();
+  });
   it("declares --env-file-if-exists=.env on every Node entrypoint", () => {
     // The static half of the guard: a future edit that drops the flag fails here.
     for (const script of ["collector", "collector:once", "migrate", "auth:hash"]) {
@@ -71,15 +72,9 @@ describe("quickstart sequence end to end", () => {
   afterAll(async () => {
     await server?.stop();
     removeDataDir(made.dir);
-    restoreEnvFile();
   });
 
   it("runs the documented sequence and both processes agree on one database", async () => {
-    // Back up any pre-existing .env so this test never destroys a developer's.
-    if (existsSync(ENV_PATH)) {
-      writeFileSync(ENV_BACKUP_PATH, readFileSync(ENV_PATH, "utf8"));
-    }
-
     // Step 2 of the quickstart: a .env that points at a specific database and
     // enables fixture mode. Nothing here is exported to the spawned processes by
     // the test itself.
@@ -89,7 +84,7 @@ describe("quickstart sequence end to end", () => {
         `ORCH_DATA_DIR=${made.dir}`,
         `ORCH_DB_PATH=${made.dbPath}`,
         "ORCH_UPSTREAM_MODE=fixture",
-        `ORCH_FIXTURE_DIR=${path.join(REPO_ROOT, "fixtures")}`,
+        `ORCH_FIXTURE_DIR=${path.join(sandbox.dir, "fixtures")}`,
         "ORCH_FIXTURE_STATIC_TIME=1",
         `ORCH_OWNER_PASSWORD=${OWNER_PASSWORD}`,
         "ORCH_COOKIE_SECURE=never",
@@ -98,7 +93,7 @@ describe("quickstart sequence end to end", () => {
     );
 
     // Step 3: migrate. Run through npm, with no ORCH_* in the environment.
-    const migrated = await runNpmScript("migrate");
+    const migrated = await runNpmScript("migrate",[],{},{cwd:sandbox.dir});
     expect(migrated.code, `migrate failed:\n${migrated.stderr}`).toBe(0);
     expect(existsSync(made.dbPath)).toBe(true);
 
@@ -113,7 +108,7 @@ describe("quickstart sequence end to end", () => {
     expect(migrateReport.ownerConfigured).toBe(true);
 
     // Step 4: collect once. Also through npm.
-    const collected = await runNpmScript("collector:once");
+    const collected = await runNpmScript("collector:once",[],{},{cwd:sandbox.dir});
     expect(collected.code, `collector:once failed:\n${collected.stderr}`).toBe(0);
     expect(collected.stdout).toContain("single cycle finished");
     expect(existsSync(made.dbPath)).toBe(true);
@@ -130,11 +125,11 @@ describe("quickstart sequence end to end", () => {
     // creates the data directory either, so its absence isolates the collector's
     // own path resolution.
     expect(existsSync(DEFAULT_DB_PATH)).toBe(false);
-    expect(existsSync(path.join(REPO_ROOT, ".orch-data"))).toBe(false);
+    expect(existsSync(path.join(sandbox.dir, ".orch-data"))).toBe(false);
 
     // Step 5: start the web server, again with no ORCH_* in the environment.
     const port = await freePort();
-    server = await startServerViaNpm({ port });
+    server = await startServerViaNpm({ port,cwd:sandbox.dir });
 
     const cookie = await login(server.baseUrl, OWNER_PASSWORD, server.baseUrl);
     const status = await http(`${server.baseUrl}/api/status`, { cookie });
@@ -176,7 +171,7 @@ describe("quickstart sequence end to end", () => {
           `ORCH_DATA_DIR=${fresh.dir}`,
           `ORCH_DB_PATH=${fresh.dbPath}`,
           "ORCH_UPSTREAM_MODE=fixture",
-          `ORCH_FIXTURE_DIR=${path.join(REPO_ROOT, "fixtures")}`,
+          `ORCH_FIXTURE_DIR=${path.join(sandbox.dir, "fixtures")}`,
           "ORCH_COOKIE_SECURE=never",
         ].join("\n") + "\n",
         "utf8",
@@ -184,7 +179,7 @@ describe("quickstart sequence end to end", () => {
 
       // Step 3 of the quickstart: migrate. The migration tool must report that
       // no credential exists yet.
-      const migrated = await runNpmScript("migrate");
+      const migrated = await runNpmScript("migrate",[],{},{cwd:sandbox.dir});
       expect(migrated.code, `migrate failed:\n${migrated.stderr}`).toBe(0);
       const report = JSON.parse(migrated.stdout.slice(migrated.stdout.indexOf("{"))) as {
         ownerConfigured: boolean;
@@ -194,7 +189,7 @@ describe("quickstart sequence end to end", () => {
       expect(report.warnings.join(" ")).toContain("ORCH_OWNER_PASSWORD");
 
       const port = await freePort();
-      const second = await startServerViaNpm({ port });
+      const second = await startServerViaNpm({ port,cwd:sandbox.dir });
       try {
         const overview = await http(`${second.baseUrl}/api/overview`);
         expect(overview.status).toBe(503);

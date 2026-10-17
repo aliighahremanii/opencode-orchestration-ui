@@ -1,8 +1,9 @@
 # Multi-stage build for the read-only orchestration observer.
 #
-# The image runs two processes from one artifact:
+# The image supplies separate processes from one artifact:
 #   - the Next.js web server  (`next start`)
 #   - the long-lived collector (`node scripts/collector.ts`)
+#   - the fail-closed question worker (`node scripts/question-worker.ts`)
 # They are started as separate services in docker-compose.yml, because they have
 # different lifetimes and because only the collector needs upstream reachability.
 #

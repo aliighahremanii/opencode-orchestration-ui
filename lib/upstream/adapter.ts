@@ -1,4 +1,5 @@
 import type { UpstreamConfig } from "../config.ts";
+import { deterministicId } from "../util/ids.ts";
 import {
   validateAgentList,
   validateLocationInfo,
@@ -44,6 +45,7 @@ import {
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
 
 export class LiveUpstreamSource implements UpstreamSource {
+  readonly connectionId: string;
   readonly kind = "live" as const;
   readonly description: string;
   private readonly config: UpstreamConfig;
@@ -57,12 +59,38 @@ export class LiveUpstreamSource implements UpstreamSource {
       );
     }
     this.config = config;
+    this.connectionId = deterministicId("connection", [config.baseUrl]);
     this.fetchImpl = fetchImpl;
     this.description = `${config.baseUrl}${config.username === null ? " (no credentials configured)" : " (HTTP Basic configured)"}`;
   }
 
   async getServerInfo(): Promise<UpstreamServerInfo> {
     return this.getJson("/api/info", {}, validateServerInfo);
+  }
+
+  async listProjects(): Promise<{ id: string; root: string; name: string | null }[]> {
+    const payload = await this.request("/api/project", {});
+    if (!Array.isArray(payload)) throw new UpstreamPayloadError("/api/project", ["expected array"]);
+    return payload.map((p: unknown) => {
+      if (!p || typeof p !== "object" || !("id" in p) || typeof p.id !== "string" || !("canonical" in p) || typeof p.canonical !== "string")
+        throw new UpstreamPayloadError("/api/project", ["invalid project identity"]);
+      return {id:p.id,root:p.canonical,name:"name" in p && typeof p.name === "string" ? p.name : null};
+    });
+  }
+
+  async workspaceMetadata(directory: string, projectId: string) {
+    let branch: string | null = null;
+    let vcsState: "verified" | "unavailable" = "unavailable";
+    let worktreeState: "verified" | "unavailable" | "unknown" = "unavailable";
+    try {
+      const raw = await this.request("/api/vcs", {"location[directory]":directory}) as {location?: {directory?: unknown}; data?: {branch?: {current?: unknown}}};
+      if (raw.location?.directory === directory && typeof raw.data?.branch?.current === "string") { branch=raw.data.branch.current; vcsState="verified"; }
+    } catch { /* Optional metadata is explicitly unavailable, never inferred. */ }
+    try {
+      const raw = await this.request("/api/worktree", {projectID:projectId});
+      if (Array.isArray(raw)) worktreeState=raw.some(w=>w && typeof w === "object" && w.directory === directory) ? "verified" : "unknown";
+    } catch { /* Inventory absence is not evidence of a worktree. */ }
+    return {branch,vcsState,worktreeState};
   }
 
   async listLocations(): Promise<readonly UpstreamLocationInfo[]> {

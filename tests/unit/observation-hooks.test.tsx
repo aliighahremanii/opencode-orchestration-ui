@@ -5,14 +5,20 @@ import { useApi, useLiveChanges } from "../../components/client/use-api.ts";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-describe("office observation lifecycle", () => {
+describe("observation lifecycle", () => {
+  it("clears already-loaded evidence synchronously on a scope change",async()=>{
+    const fetcher=vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({scope:"old"}))).mockImplementation(()=>new Promise(()=>{}));vi.stubGlobal("fetch",fetcher);
+    const hook=renderHook(({path})=>useApi<{scope:string}>(path),{initialProps:{path:"/api/workspace?project=old"}});
+    await act(async()=>{});expect(hook.result.current.state).toEqual({status:"ready",data:{scope:"old"}});
+    hook.rerender({path:"/api/workspace?project=new"});expect(hook.result.current.state).toEqual({status:"loading"});
+  });
   it("does not overlap polls or starve a slow read under repeated invalidations", async () => {
     vi.useFakeTimers();
     let resolveFirst!: (response: Response) => void;
     const fetcher = vi.fn().mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveFirst = resolve; }))
       .mockResolvedValue(new Response(JSON.stringify({ version: 2 }), { status: 200 }));
     vi.stubGlobal("fetch", fetcher);
-    const hook = renderHook(() => useApi<{ version: number }>("/api/office", { pollMs: 100 }));
+    const hook = renderHook(() => useApi<{ version: number }>("/api/workspace", { pollMs: 100 }));
     await act(async () => { vi.advanceTimersByTime(500); });
     expect(fetcher).toHaveBeenCalledTimes(1);
     await act(async () => { for (let index = 0; index < 10; index++) hook.result.current.refresh(); });
@@ -27,7 +33,7 @@ describe("office observation lifecycle", () => {
     const fetcher = vi.fn().mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveFirst = resolve; }))
       .mockResolvedValue(new Response(JSON.stringify({ version: 2 }), { status: 200 }));
     vi.stubGlobal("fetch", fetcher);
-    const hook = renderHook(({ path }) => useApi<{ version: number }>(path), { initialProps: { path: "/api/office" } });
+    const hook = renderHook(({ path }) => useApi<{ version: number }>(path), { initialProps: { path: "/api/workspace" } });
     await act(async () => { hook.rerender({ path: "/api/overview" }); });
     await act(async () => { resolveFirst(new Response(JSON.stringify({ version: 1 }), { status: 200 })); });
     expect(hook.result.current.state).toEqual({ status: "ready", data: { version: 2 } });

@@ -12,6 +12,7 @@ import tsconfigPaths from "vite-tsconfig-paths";
  * those tests build and start a real Next.js server.
  */
 export default defineConfig({
+  envDir: false,
   plugins: [tsconfigPaths()],
   test: {
     environment: "node",

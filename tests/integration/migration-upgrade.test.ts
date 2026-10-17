@@ -124,10 +124,10 @@ describe("migration upgrade v1 -> v2", () => {
     const db = createVersionOneDatabase(`${dir}/upgrade.sqlite`);
     try {
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1]);
       expect(currentSchemaVersion(db)).toBe(expectedSchemaVersion());
-      expect(appliedMigrations(db).map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(appliedMigrations(db).map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
     } finally {
       db.close();
     }
@@ -140,7 +140,7 @@ describe("migration upgrade v1 -> v2", () => {
       runMigrations(db, "test");
       const second = runMigrations(db, "test");
       expect(second.applied).toEqual([]);
-      expect(second.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(second.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
     } finally {
       db.close();
     }
@@ -284,7 +284,7 @@ describe("migration upgrade v1 -> v2", () => {
     const test: TestDb = createTestDb();
     try {
       expect(currentSchemaVersion(test.db)).toBe(expectedSchemaVersion());
-      expect(appliedMigrations(test.db).map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(appliedMigrations(test.db).map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
     } finally {
       test.close();
     }
@@ -363,7 +363,7 @@ describe("migration upgrade v2 -> v3 (camelCase redaction reprocessing)", () => 
     try {
       expect(currentSchemaVersion(db)).toBe(2);
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2]);
       expect(currentSchemaVersion(db)).toBe(expectedSchemaVersion());
     } finally {
@@ -685,7 +685,7 @@ describe("migration data-step identity and checksum immutability", () => {
       }
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3]);
       expect(currentSchemaVersion(db)).toBe(expectedSchemaVersion());
 
@@ -919,7 +919,7 @@ describe("migration upgrade v3 -> v4 (display redaction reprocessing)", () => {
 
       // No collector runs here: the migration alone must sanitise the database.
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       for (const secret of SECRETS) {
@@ -1242,7 +1242,7 @@ describe("migration upgrade v3 -> v5 and v4 -> v5 (redaction convergence and the
       expect(before).toContain(LIVE);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = db.prepare("SELECT content, redacted FROM activity_events WHERE id = 'act_malformed'").get() as {
         content: string;
@@ -1273,7 +1273,7 @@ describe("migration upgrade v3 -> v5 and v4 -> v5 (redaction convergence and the
       for (const secret of SECRETS) expect(before, secret).toContain(secret);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       for (const secret of SECRETS) expect(after, secret).not.toContain(secret);
@@ -1417,7 +1417,7 @@ describe("migration upgrade v3 -> v5 and v4 -> v5 (redaction convergence and the
       expect(before).toContain(LIVE);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain(PASSWORD);
@@ -1496,7 +1496,7 @@ describe("migration upgrade v3 -> v5 and v4 -> v5 (redaction convergence and the
       expect(before).toContain(LIVE);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain(PASSWORD);
@@ -1550,7 +1550,7 @@ describe("migration upgrade v3 -> v5 and v4 -> v5 (redaction convergence and the
       expect(before).toContain(PASSWORD);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain(LIVE);
@@ -1621,7 +1621,7 @@ describe("migration upgrade v5 -> v6 (escaped redaction repair)", () => {
       expect(recordedChecksum(db, 5)).toBe(checksumOf(V5!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5]);
 
       // Applying v6 re-records nothing: every earlier identity is untouched.
@@ -1649,7 +1649,7 @@ describe("migration upgrade v5 -> v6 (escaped redaction repair)", () => {
       expect(before).toContain(ESCAPED_LIVE);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain(ESCAPED_LIVE);
@@ -1765,7 +1765,7 @@ describe("migration upgrade v6 -> v7 (escaped sibling and value repair)", () => 
       expect(recordedChecksum(db, 6)).toBe(checksumOf(V6!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6]);
 
       for (const version of [1, 2, 3]) {
@@ -1797,7 +1797,7 @@ describe("migration upgrade v6 -> v7 (escaped sibling and value repair)", () => 
       expect(before).toContain("[17,23,42,91]");
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain(SIBLING_TOKEN);
@@ -1914,7 +1914,7 @@ describe("migration upgrade v7 -> v8 (nested and delimitation repair)", () => {
       expect(recordedChecksum(db, 7)).toBe(checksumOf(V7!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7]);
 
       for (const version of [1, 2, 3]) {
@@ -1947,7 +1947,7 @@ describe("migration upgrade v7 -> v8 (nested and delimitation repair)", () => {
       expect(before).toContain("opaque-suffix");
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain("[17,23,42,91]");
@@ -2060,7 +2060,7 @@ describe("migration upgrade v8 -> v9 (escaped plaintext repair)", () => {
       expect(recordedChecksum(db, 8)).toBe(checksumOf(V8!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
 
       for (const version of [1, 2, 3]) {
@@ -2090,7 +2090,7 @@ describe("migration upgrade v8 -> v9 (escaped plaintext repair)", () => {
       expect(before).toContain(PLAINTEXT_LIVE);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain(PLAINTEXT_LIVE);
@@ -2196,7 +2196,7 @@ describe("migration upgrade v9 -> v10 (escaped assignment repair)", () => {
       expect(recordedChecksum(db, 9)).toBe(checksumOf(V9!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
       for (const version of [1, 2, 3]) {
@@ -2226,7 +2226,7 @@ describe("migration upgrade v9 -> v10 (escaped assignment repair)", () => {
       expect(before).toContain(ASSIGN_LIVE);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([10, 11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain("[17,23,42,91]");
@@ -2341,7 +2341,7 @@ describe("migration upgrade v10 -> v11 (assignment grammar repair)", () => {
       expect(recordedChecksum(db, 10)).toBe(checksumOf(V10!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([11, 12, 13, 14, 15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
       expect(currentSchemaVersion(db)).toBe(expectedSchemaVersion());
 
@@ -2379,7 +2379,7 @@ describe("migration upgrade v10 -> v11 (assignment grammar repair)", () => {
       expect(before).toContain("[1,2}");
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([11, 12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([11, 12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain("[17,23,42,91]");
@@ -2519,7 +2519,7 @@ describe("migration upgrade v11 -> v12 (boundary and escaped-key repair)", () =>
       expect(recordedChecksum(db, 11)).toBe(checksumOf(V11!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([12, 13, 14, 15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
       expect(currentSchemaVersion(db)).toBe(expectedSchemaVersion());
 
@@ -2556,7 +2556,7 @@ describe("migration upgrade v11 -> v12 (boundary and escaped-key repair)", () =>
       expect(before).toContain(NESTED_LIVE);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([12, 13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([12, 13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain(BOUNDARY_LIVE);
@@ -2690,7 +2690,7 @@ describe("migration upgrade v12 -> v13 (container strings and key escapes)", () 
       expect(recordedChecksum(db, 12)).toBe(checksumOf(V12!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([13, 14, 15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
       expect(currentSchemaVersion(db)).toBe(expectedSchemaVersion());
 
@@ -2729,7 +2729,7 @@ describe("migration upgrade v12 -> v13 (container strings and key escapes)", () 
       }
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([13, 14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([13, 14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       for (const secret of [CONTAINER_LIVE, NESTED_ESCAPE_LIVE, BARE_CONTINUATION_LIVE, PEM_LIVE]) {
@@ -2855,7 +2855,7 @@ describe("migration upgrade v13 -> v14 (bounded lookup and partial redaction)", 
       expect(recordedChecksum(db, 13)).toBe(checksumOf(V13!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([14, 15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
       expect(currentSchemaVersion(db)).toBe(expectedSchemaVersion());
 
@@ -2887,7 +2887,7 @@ describe("migration upgrade v13 -> v14 (bounded lookup and partial redaction)", 
       expect(before).toContain(LONG_KEY_LIVE);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([14, 15, 16, 17, 18]);
+      expect(result.applied).toEqual([14, 15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain(PARTIAL_LIVE);
@@ -3011,7 +3011,7 @@ describe("migration upgrade v14 -> v15 (whitespace artifact and JSON siblings)",
       expect(recordedChecksum(db, 14)).toBe(checksumOf(V14!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([15, 16, 17, 18]);
+      expect(result.applied).toEqual([15, 16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
       expect(currentSchemaVersion(db)).toBe(expectedSchemaVersion());
 
@@ -3043,7 +3043,7 @@ describe("migration upgrade v14 -> v15 (whitespace artifact and JSON siblings)",
       expect(before).toContain(V14_LEFTOVER_LIVE);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([15, 16, 17, 18]);
+      expect(result.applied).toEqual([15, 16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain(WS_LIVE);
@@ -3206,7 +3206,7 @@ describe("migration upgrade v15 -> v16 (linear artifact recovery)", () => {
       expect(recordedChecksum(db, 15)).toBe(checksumOf(V15!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([16, 17, 18]);
+      expect(result.applied).toEqual([16, 17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
       expect(currentSchemaVersion(db)).toBe(expectedSchemaVersion());
 
@@ -3236,7 +3236,7 @@ describe("migration upgrade v15 -> v16 (linear artifact recovery)", () => {
       expect(before).toContain(ARTIFACT_LIVE);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([16, 17, 18]);
+      expect(result.applied).toEqual([16, 17, 18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain(ARTIFACT_LIVE);
@@ -3267,7 +3267,7 @@ describe("migration upgrade v15 -> v16 (linear artifact recovery)", () => {
       const started = Date.now();
       const result = runMigrations(db, "test");
       expect(Date.now() - started).toBeLessThan(5_000);
-      expect(result.applied).toEqual([16, 17, 18]);
+      expect(result.applied).toEqual([16, 17, 18, 19]);
 
       const row = db
         .prepare("SELECT content, redacted FROM activity_events WHERE id = 'act_marker_heavy'")
@@ -3399,7 +3399,7 @@ describe("migration upgrade v16 -> v17 (embedded JSON protection)", () => {
       expect(recordedChecksum(db, 16)).toBe(checksumOf(V16!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([17, 18]);
+      expect(result.applied).toEqual([17, 18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
       expect(currentSchemaVersion(db)).toBe(expectedSchemaVersion());
 
@@ -3425,7 +3425,7 @@ describe("migration upgrade v16 -> v17 (embedded JSON protection)", () => {
       insertEscapedActivity(db, "act_structured", V16_STRUCTURED);
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([17, 18]);
+      expect(result.applied).toEqual([17, 18, 19]);
 
       const row = db
         .prepare("SELECT content, redacted FROM activity_events WHERE id = 'act_structured'")
@@ -3548,7 +3548,7 @@ describe("migration upgrade v17 -> v18 (whole-key examination)", () => {
       expect(recordedChecksum(db, 17)).toBe(checksumOf(V17!));
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([18]);
+      expect(result.applied).toEqual([18, 19]);
       expect(result.alreadyApplied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
       expect(currentSchemaVersion(db)).toBe(expectedSchemaVersion());
 
@@ -3581,7 +3581,7 @@ describe("migration upgrade v17 -> v18 (whole-key examination)", () => {
       expect(before).toContain("[42]");
 
       const result = runMigrations(db, "test");
-      expect(result.applied).toEqual([18]);
+      expect(result.applied).toEqual([18, 19]);
 
       const after = apiVisibleText(db);
       expect(after).not.toContain(SUFFIX_LIVE);

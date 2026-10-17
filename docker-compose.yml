@@ -27,6 +27,7 @@ services:
       HOSTNAME: 0.0.0.0
       PORT: "3000"
       ORCH_DATA_DIR: /data
+      ORCH_DB_PATH: ${ORCH_DB_PATH:-/data/orchestration.sqlite}
       # The web process is not the collector and must not attempt to collect.
       ORCH_ROLE: web
     volumes:
@@ -54,6 +55,7 @@ services:
       - .env
     environment:
       ORCH_DATA_DIR: /data
+      ORCH_DB_PATH: ${ORCH_DB_PATH:-/data/orchestration.sqlite}
       ORCH_ROLE: collector
     command: ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "scripts/collector.ts"]
     volumes:
@@ -64,6 +66,26 @@ services:
       - upstream
     # The collector needs the database, so it shares the web service's image and
     # volume. It publishes nothing.
+
+  # Capability remains disabled. This isolated worker only recovers local jobs;
+  # it has no upstream mutation adapter and cannot enable itself via environment.
+  question-worker:
+    image: opencode-orchestration-ui:local
+    profiles: ["questions"]
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      ORCH_DATA_DIR: /data
+      # Share the same interpolated filename, not the collector's credential env_file.
+      ORCH_DB_PATH: ${ORCH_DB_PATH:-/data/orchestration.sqlite}
+      ORCH_ROLE: worker
+    command: ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "scripts/question-worker.ts"]
+    volumes:
+      - orch-data:/data
+    networks:
+      - upstream
 
   # Optional reverse proxy. Remove this service if a host-level proxy (for
   # example a system Caddy) already terminates TLS.

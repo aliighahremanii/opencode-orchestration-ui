@@ -79,8 +79,10 @@ export interface AgentDefinition {
 }
 
 /**
- * A root run: a root session (no `parentID`) plus every session observed to
- * descend from it within the same location.
+ * A root run: a root session (no `parentID`) plus its observed descendants.
+ * Cross-location ancestry requires explicit parent links and verified matching
+ * project, connection and source identities. Unknown or conflicting boundaries
+ * are not crossed; legacy unknown-connection observations remain location-bounded.
  */
 export interface RootRun {
   readonly id: string;

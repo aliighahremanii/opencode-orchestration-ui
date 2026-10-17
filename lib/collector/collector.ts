@@ -1,4 +1,5 @@
 import type { CollectorConfig } from "../config.ts";
+import { persistWorkspaceIdentity, projectScopeMap, reconcileAssignments, bindSessionOrigin, investigationSessionIds } from "../db/workspace.ts";
 import type { Db } from "../db/driver.ts";
 import {
   acquireLease,
@@ -19,7 +20,7 @@ import {
   type LeaseHandle,
 } from "../db/collection-state.ts";
 import {
-  closeOpenGaps,
+  closeOpenGapsForStream,
   countActivityForSession,
   deactivateAgentsNotInSnapshot,
   deleteActivityForSession,
@@ -40,8 +41,8 @@ import {
 import { deterministicId } from "../util/ids.ts";
 import type { ObservationSource } from "../domain/types.ts";
 import { buildRunTree, fromStoredSession, normalizeSessionActivity } from "./normalize.ts";
-import type { UpstreamSource } from "../upstream/source.ts";
-import { UpstreamError } from "../upstream/source.ts";
+import type { AgentList, UpstreamSource } from "../upstream/source.ts";
+import { UpstreamError, UpstreamHttpError } from "../upstream/source.ts";
 import type { UpstreamMessage, UpstreamSessionInfo } from "../upstream/schema.ts";
 
 /**
@@ -127,8 +128,12 @@ export interface CycleResult {
   readonly error: string | null;
 }
 
-export function locationIdFor(directory: string): string {
-  return deterministicId("loc", [directory]);
+export function locationIdFor(directory: string, connectionId?:string, source?:ObservationSource): string {
+  return deterministicId("loc", connectionId || source==="upstream" ? [connectionId ?? "unknown-connection",source ?? "upstream",directory] : [directory]);
+}
+
+export function observedSessionIdFor(upstreamId:string,connectionId?:string,source?:ObservationSource):string {
+  return connectionId ? deterministicId("ses",[connectionId,source ?? "upstream",upstreamId]) : upstreamId;
 }
 
 /**
@@ -224,9 +229,8 @@ export function gapIdFor(scope: string, stream: string, startedAt: number): stri
 /**
  * Open a coverage gap.
  *
- * The gap is left unresolved (`open`, not `resumed`). It is closed only by
- * {@link closeGapsAfterSuccess}, which runs after a cycle genuinely succeeds, so
- * a gap is never marked resumed before success.
+ * The gap is left unresolved (`open`, not `resumed`). Cycle/lease gaps close
+ * after a successful cycle; registry gaps close with their successful snapshot.
  */
 export function openGapCandidate(
   db: Db,
@@ -247,12 +251,13 @@ export function openGapCandidate(
   });
 }
 
-/** Close every open gap now that collection has provably resumed. */
+/** A successful cycle proves cycle/lease recovery, not unobserved registry coverage. */
 export function closeGapsAfterSuccess(db: Db, handle: LeaseHandle, now: number): number {
   return withFence(db, handle, now, () => {
-    const closed = closeOpenGaps(db, handle.scope, now);
+    const closed = closeOpenGapsForStream(db, handle.scope, "cycle", now)
+      + closeOpenGapsForStream(db, handle.scope, "lease", now);
     if (closed > 0) {
-      appendChange(db, { kind: "gap-closed", entityId: "all", scope: handle.scope }, now);
+      appendChange(db, { kind: "gap-closed", entityId: "cycle/lease", scope: handle.scope }, now);
     }
     return closed;
   });
@@ -274,6 +279,8 @@ interface ReconcileAccumulator {
   crossLocationLinks: number;
   crossSourceLinks: number;
   partialTranscripts: number;
+  unknownMessageTypes: string[];
+  gapsRecorded: number;
 }
 
 /**
@@ -281,9 +288,11 @@ interface ReconcileAccumulator {
  * state converges on the same rows.
  */
 export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promise<CycleResult> {
-  const startedAt = deps.now();
-  const source: ObservationSource = observationSourceFor(deps.source.kind);
-  const acc: ReconcileAccumulator = {
+  return reconcileWithProgress(deps, handle, emptyProgress());
+}
+
+function emptyProgress(): ReconcileAccumulator {
+  return {
     locations: 0,
     agents: 0,
     sessions: 0,
@@ -297,12 +306,21 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
     crossLocationLinks: 0,
     crossSourceLinks: 0,
     partialTranscripts: 0,
+    unknownMessageTypes: [],
+    gapsRecorded: 0,
   };
-  const unknownMessageTypes = new Set<string>();
+}
+
+/** Progress is published only after fenced transactions commit, including on failure. */
+async function reconcileWithProgress(deps: CollectorDeps, handle: LeaseHandle, acc: ReconcileAccumulator): Promise<CycleResult> {
+  const startedAt = deps.now();
+  const source: ObservationSource = observationSourceFor(deps.source.kind);
 
   // 1. Confirm the upstream is reachable and record its identity.
   const serverInfo = await deps.source.getServerInfo();
   const declaredLocations = await deps.source.listLocations();
+  const projects = await deps.source.listProjects?.().catch(() => []) ?? [];
+  const investigationIds = investigationSessionIds(deps.db);
   deps.log.info("upstream reachable", { version: serverInfo.version, locations: declaredLocations.length });
 
   // 2. Page through sessions. Bounded so a large instance cannot stall a cycle.
@@ -322,7 +340,7 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
   // messages are appended). Deduplicate before doing any per-session work so a
   // repeat cannot double-count observations or cause a redundant transcript
   // fetch.
-  const unique = [...new Map(bounded.map((session) => [session.id, session])).values()];
+  const unique = [...new Map(bounded.filter(s=>!investigationIds.has(observedSessionIdFor(s.id,deps.source.connectionId,source))).map((session) => [session.id, session])).values()];
 
   // 3. Locations come from the declared location plus every location a session
   //    reports, so a session in another checkout is still scoped correctly.
@@ -334,7 +352,7 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
       canonical: declared.canonical,
     });
   }
-  for (const session of bounded) {
+  for (const session of unique) {
     if (session.locationDirectory === "") continue;
     if (!directories.has(session.locationDirectory)) {
       directories.set(session.locationDirectory, {
@@ -353,10 +371,19 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
   //    effective. The row is retained so historical invocations keep their
   //    attribution.
   for (const location of directories.values()) {
-    const locationId = locationIdFor(location.directory);
-    const list = await deps.source.listAgents(location.directory);
-    const snapshotIds = list.agents.map((agent) => agent.id);
-    withFence(deps.db, handle, deps.now(), () => {
+    const locationId = locationIdFor(location.directory,deps.source.connectionId,source);
+    let list: AgentList | null;
+    try {
+      list = await deps.source.listAgents(location.directory);
+    } catch (cause) {
+      // Only this endpoint's typed 404 means an unavailable location registry.
+      // Authentication, validation, transport and all other HTTP errors stay fatal.
+      if (!(cause instanceof UpstreamHttpError) || cause.path !== "/api/agent" || cause.status !== 404) throw cause;
+      list = null;
+    }
+    const gapStream = `${STREAM_AGENTS_PREFIX}${locationId}`;
+    const metadata = await deps.source.workspaceMetadata?.(location.directory,location.projectId) ?? {branch:null,vcsState:"unknown" as const,worktreeState:"unknown" as const};
+    const openedGap = withFence(deps.db, handle, deps.now(), () => {
       upsertLocation(deps.db, {
         id: locationId,
         directory: location.directory,
@@ -366,6 +393,25 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
         source,
         seenAt: deps.now(),
       });
+      const declared = declaredLocations.find(d=>d.projectId===location.projectId);
+      persistWorkspaceIdentity(deps.db,{locationId,connectionId:deps.source.connectionId ?? null,source,projectId:location.projectId,
+        directory:location.directory,project:projects.find(p=>p.id===location.projectId) ?? (declared ? {id:declared.projectId,root:declared.projectDirectory,name:null}:null), metadata,now:deps.now()});
+      if (list === null) {
+        // Keep the last successful membership, timestamps and checkpoint intact.
+        // Deduplicate under the same fence and preserve the outage's original start.
+        const existing = listOpenGaps(deps.db, handle.scope).some(gap => gap.stream === gapStream);
+        if (!existing) {
+          const checkpoint = getCheckpoint(deps.db, handle.scope, `${STREAM_AGENTS_PREFIX}${location.directory}`);
+          const startedAt = checkpoint?.updatedAt ?? deps.now();
+          const detail = `Agent registry unavailable for location ${locationId}: /api/agent returned HTTP 404; last successful membership retained`;
+          openGap(deps.db, { id: gapIdFor(handle.scope, gapStream, startedAt), scope: handle.scope,
+            stream: gapStream, startedAt, reason: detail, detectedAt: deps.now() });
+          recordWarning(deps.db, { scope: handle.scope, kind: "agent-registry-unavailable", detail }, deps.now());
+          appendChange(deps.db, { kind: "gap", entityId: gapStream, scope: handle.scope }, deps.now());
+        }
+        appendChange(deps.db, { kind: "location", entityId: locationId, scope: handle.scope }, deps.now());
+        return !existing;
+      }
       for (const agent of list.agents) {
         upsertAgent(deps.db, {
           locationId,
@@ -384,7 +430,7 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
       }
       // Membership and observations commit together, so there is no window in
       // which the snapshot is applied but its membership is not.
-      const deactivated = deactivateAgentsNotInSnapshot(deps.db, locationId, snapshotIds);
+      const deactivated = deactivateAgentsNotInSnapshot(deps.db, locationId, list.agents.map(agent => agent.id));
       if (deactivated > 0) {
         deps.log.info("agents no longer reported by the API were marked inactive", {
           location: location.directory,
@@ -392,9 +438,17 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
         });
       }
       appendChange(deps.db, { kind: "agents", entityId: locationId, scope: handle.scope }, deps.now());
+      setCheckpoint(deps.db, { scope: handle.scope, stream: `${STREAM_AGENTS_PREFIX}${location.directory}`,
+        cursor: null, lastSeenAt: deps.now(), updatedAt: deps.now(), partial: false });
+      if (closeOpenGapsForStream(deps.db, handle.scope, gapStream, deps.now()) > 0) {
+        appendChange(deps.db, { kind: "gap-closed", entityId: gapStream, scope: handle.scope }, deps.now());
+      }
+      return false;
     });
     acc.locations += 1;
-    acc.agents += list.agents.length;
+    acc.agents += list?.agents.length ?? 0;
+    if (openedGap) acc.gapsRecorded += 1;
+    if (list === null) deps.log.warn("agent registry unavailable; continuing independent observations", { locationId, status: 404 });
   }
 
   // 5. Persist the sessions from this window, then rebuild the run forest from
@@ -404,12 +458,16 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
   //    browsable.
   withFence(deps.db, handle, deps.now(), () => {
     for (const session of unique) {
-      const locationId = locationIdFor(session.locationDirectory);
+      if(directories.get(session.locationDirectory)?.projectId!==session.projectId)
+        throw new Error("Session project conflicts with observed location identity; collection cannot safely publish this scope.");
+      const locationId = locationIdFor(session.locationDirectory,deps.source.connectionId,source);
+      const sessionId=observedSessionIdFor(session.id,deps.source.connectionId,source);
+      bindSessionOrigin(deps.db,sessionId,deps.source.connectionId ?? "legacy",source,session.id);
       upsertSession(deps.db, {
-        id: session.id,
+        id: sessionId,
         locationId,
         projectId: session.projectId,
-        parentId: session.parentId,
+        parentId: session.parentId ? observedSessionIdFor(session.parentId,deps.source.connectionId,source) : null,
         agentId: session.agentId,
         modelProviderId: session.modelProviderId,
         modelId: session.modelId,
@@ -423,16 +481,14 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
         source,
         seenAt: deps.now(),
       });
-      acc.sessions += 1;
     }
     appendChange(deps.db, { kind: "sessions", entityId: "all", scope: handle.scope }, deps.now());
   });
+  acc.sessions += unique.length;
 
   const storedSessions = listStoredSessionsForTree(deps.db);
-  const tree = buildRunTree(storedSessions.map(fromStoredSession), { now: deps.now() });
-  acc.orphans = tree.orphans.length;
-  acc.crossLocationLinks = tree.crossLocation.length;
-  acc.crossSourceLinks = tree.crossSource.length;
+  const scopes = projectScopeMap(deps.db);
+  const tree = buildRunTree(storedSessions.filter(s=>!investigationIds.has(s.id)).map(s=>{const scope=scopes.get(s.locationId);return {...fromStoredSession(s),...(scope?.upstreamProjectId===s.projectId?scope:{})};}), { now: deps.now() });
 
   const runIdBySession = new Map<string, string>();
   for (const membership of tree.memberships) {
@@ -447,8 +503,13 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
     // linked to its parent) never has its stored records stranded on the run that
     // just disappeared.
     reconcileRunReferences(deps.db);
+    reconcileAssignments(deps.db);
     appendChange(deps.db, { kind: "runs", entityId: "all", scope: handle.scope }, deps.now());
   });
+  acc.orphans = tree.orphans.length;
+  acc.cycles = tree.cycles.length;
+  acc.crossLocationLinks = tree.crossLocation.length;
+  acc.crossSourceLinks = tree.crossSource.length;
 
   if (tree.orphans.length > 0) {
     deps.log.warn("sessions whose parent was not observed were treated as their own root", {
@@ -490,9 +551,11 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
   //    activity must be preserved rather than replaced, and the checkpoint must
   //    record that the stream is incomplete.
   for (const session of unique) {
-    const runId = runIdBySession.get(session.id) ?? null;
-    const locationId = locationIdFor(session.locationDirectory);
+    const sessionId=observedSessionIdFor(session.id,deps.source.connectionId,source);
+    const runId = runIdBySession.get(sessionId) ?? null;
+    const locationId = locationIdFor(session.locationDirectory,deps.source.connectionId,source);
     const collectedMessages: UpstreamMessage[] = [];
+    const unknownMessageTypes = new Set<string>();
     let messageCursor: string | null = null;
     let messagePages = 0;
     const maxMessagePages = Math.max(1, Math.ceil(deps.config.maxSessionsPerLocation / deps.config.messagePageLimit));
@@ -514,7 +577,7 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
 
     const normalized = normalizeSessionActivity({
       locationId,
-      sessionId: session.id,
+      sessionId,
       runId,
       source,
       messages: collectedMessages,
@@ -522,21 +585,14 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
       ingestedAt: deps.now(),
     });
 
-    acc.messages += collectedMessages.length;
-    acc.duplicateMessages += normalized.duplicateMessageCount;
-    acc.outOfOrderMessages += normalized.outOfOrderCount;
-    if (!transcriptComplete) {
-      acc.partialTranscripts += 1;
-    }
-
     withFence(deps.db, handle, deps.now(), () => {
       // Only a complete snapshot may replace a session's activity. Deleting on a
       // partial snapshot would destroy events that were observed earlier and that
       // this bounded fetch simply did not reach.
       if (transcriptComplete) {
-        const existing = countActivityForSession(deps.db, session.id);
+        const existing = countActivityForSession(deps.db, sessionId);
         if (existing > 0) {
-          deleteActivityForSession(deps.db, session.id);
+          deleteActivityForSession(deps.db, sessionId);
         }
       }
       for (const event of normalized.events) {
@@ -550,15 +606,22 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
       // describes, so a checkpoint can never claim coverage that was not written.
       setCheckpoint(deps.db, {
         scope: handle.scope,
-        stream: `${STREAM_MESSAGES_PREFIX}${session.id}`,
+        stream: `${STREAM_MESSAGES_PREFIX}${sessionId}`,
         cursor: transcriptComplete ? null : messageCursor,
         lastSeenAt: collectedMessages.reduce((max, message) => Math.max(max, message.created), 0) || null,
         updatedAt: deps.now(),
         partial: !transcriptComplete,
       });
 
-      appendChange(deps.db, { kind: "session-activity", entityId: session.id, scope: handle.scope }, deps.now());
+      appendChange(deps.db, { kind: "session-activity", entityId: sessionId, scope: handle.scope }, deps.now());
     });
+    acc.messages += collectedMessages.length;
+    acc.duplicateMessages += normalized.duplicateMessageCount;
+    acc.outOfOrderMessages += normalized.outOfOrderCount;
+    if (!transcriptComplete) acc.partialTranscripts += 1;
+    acc.activityEvents += normalized.events.length;
+    acc.invocations += normalized.invocations.length;
+    acc.unknownMessageTypes = [...new Set([...acc.unknownMessageTypes, ...unknownMessageTypes])];
 
     if (!transcriptComplete) {
       deps.log.warn("transcript paging bound reached; stored activity was preserved and the checkpoint is partial", {
@@ -573,9 +636,6 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
         `${session.id}: reached the ${maxMessagePages}-page bound with more history available`,
       );
     }
-
-    acc.activityEvents += normalized.events.length;
-    acc.invocations += normalized.invocations.length;
   }
 
   withFence(deps.db, handle, deps.now(), () => {
@@ -595,28 +655,19 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
       updatedAt: deps.now(),
       partial: false,
     });
-    for (const directory of directories.keys()) {
-      setCheckpoint(deps.db, {
-        scope: handle.scope,
-        stream: `${STREAM_AGENTS_PREFIX}${directory}`,
-        cursor: null,
-        lastSeenAt: deps.now(),
-        updatedAt: deps.now(),
-        partial: false,
-      });
-    }
   });
 
-  for (const unknown of unknownMessageTypes) {
+  for (const unknown of acc.unknownMessageTypes) {
     deps.log.warn("upstream returned a message type this build does not understand", { type: unknown });
     recordWarningSafe(deps, handle, "unknown-message-type", unknown);
   }
 
   const stats = overviewStats(deps.db);
   deps.log.info("reconcile complete", { ...stats, durationMs: deps.now() - startedAt });
+  const unresolved = listOpenGaps(deps.db, handle.scope).filter(gap => gap.stream.startsWith(STREAM_AGENTS_PREFIX));
 
   return {
-    ok: true,
+    ok: unresolved.length === 0,
     source,
     locations: acc.locations,
     agents: acc.agents,
@@ -626,15 +677,15 @@ export async function reconcile(deps: CollectorDeps, handle: LeaseHandle): Promi
     invocations: acc.invocations,
     duplicateMessages: acc.duplicateMessages,
     outOfOrderMessages: acc.outOfOrderMessages,
-    unknownMessageTypes: [...unknownMessageTypes],
-    gapsRecorded: 0,
+    unknownMessageTypes: acc.unknownMessageTypes,
+    gapsRecorded: acc.gapsRecorded,
     orphans: acc.orphans,
     cycles: acc.cycles,
     crossLocationLinks: acc.crossLocationLinks,
     crossSourceLinks: acc.crossSourceLinks,
     partialTranscripts: acc.partialTranscripts,
     durationMs: deps.now() - startedAt,
-    error: null,
+    error: unresolved.length === 0 ? null : `Agent registry coverage unavailable for ${unresolved.length} location(s); see open agents:<locationId> gaps`,
   };
 }
 
@@ -833,9 +884,18 @@ export async function runCycle(
   });
 
   const reconcileDeps: CollectorDeps = { ...deps, isLeaseLost: heartbeat.lost };
+  const progress = emptyProgress();
 
   try {
-    const result = await reconcile(reconcileDeps, heldLease);
+    const result = await reconcileWithProgress(reconcileDeps, heldLease, progress);
+    if (!result.ok) {
+      // Independent observations committed, but coverage has not recovered.
+      fenceMeta("collector state", () => {
+        setCollectorState(deps.db, { scope: COLLECTOR_SCOPE, holderId, epoch: heldLease.epoch,
+          lastCycleAt: deps.now(), lastCycleOk: false, lastError: result.error, updatedAt: deps.now() });
+      });
+      return finish({ ...result, gapsRecorded: gapsRecorded + progress.gapsRecorded });
+    }
 
     // Success. Only now may an open gap be marked resumed.
     const closed = closeGapsAfterSuccess(deps.db, heldLease, deps.now());
@@ -879,7 +939,7 @@ export async function runCycle(
       });
     });
 
-    return finish({ ...result, gapsRecorded });
+    return finish({ ...result, gapsRecorded: gapsRecorded + progress.gapsRecorded });
   } catch (cause) {
     const message = cause instanceof UpstreamError ? `${cause.name}: ${cause.message}` : cause instanceof Error ? cause.message : String(cause);
     deps.log.error("reconcile failed", { error: message });
@@ -892,10 +952,10 @@ export async function runCycle(
       // Only one gap is opened per outage: if a gap is already open, the window
       // is already represented and re-asserting it would create a second row per
       // failed attempt.
-      const alreadyOpen = listOpenGaps(deps.db, heldLease.scope).length > 0;
+      const alreadyOpen = listOpenGaps(deps.db, heldLease.scope).some(gap => gap.stream === "cycle");
       if (!alreadyOpen) {
         const startedAt = previousState?.lastSuccessAt ?? cycleStartedAt;
-        fenceMeta("failure gap", () => {
+        const wrote = fenceMeta("failure gap", () => {
           openGap(deps.db, {
             id: gapIdFor(heldLease.scope, "cycle", startedAt),
             scope: heldLease.scope,
@@ -906,6 +966,7 @@ export async function runCycle(
           });
           appendChange(deps.db, { kind: "gap", entityId: "cycle", scope: heldLease.scope }, deps.now());
         });
+        if (wrote) gapsRecorded += 1;
       }
     }
 
@@ -926,21 +987,8 @@ export async function runCycle(
     return finish({
       ok: false,
       source: observationSourceFor(deps.source.kind),
-      locations: 0,
-      agents: 0,
-      sessions: 0,
-      messages: 0,
-      activityEvents: 0,
-      invocations: 0,
-      duplicateMessages: 0,
-      outOfOrderMessages: 0,
-      unknownMessageTypes: [],
-      gapsRecorded,
-      orphans: 0,
-      cycles: 0,
-      crossLocationLinks: 0,
-      crossSourceLinks: 0,
-      partialTranscripts: 0,
+      ...progress,
+      gapsRecorded: gapsRecorded + progress.gapsRecorded,
       durationMs: deps.now() - cycleStartedAt,
       error: message,
     });

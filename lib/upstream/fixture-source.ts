@@ -6,14 +6,13 @@ import {
   validateMessagesResponse,
   validateServerInfo,
   validateSessionsResponse,
-  type UpstreamAgentInfo,
   type UpstreamLocationInfo,
   type UpstreamLocationRef,
   type UpstreamMessage,
   type UpstreamServerInfo,
   type UpstreamSessionInfo,
 } from "./schema.ts";
-import { UpstreamPayloadError, UpstreamUnavailableError, type AgentList, type MessagePage, type SessionPage, type UpstreamSource } from "./source.ts";
+import { UpstreamHttpError, UpstreamPayloadError, UpstreamUnavailableError, type AgentList, type MessagePage, type SessionPage, type UpstreamSource } from "./source.ts";
 
 /**
  * Fixture upstream source.
@@ -216,8 +215,8 @@ export class FixtureUpstreamSource implements UpstreamSource {
   async listAgents(locationDirectory: string): Promise<AgentList> {
     const file = this.manifest.agentLists[locationDirectory];
     if (file === undefined) {
-      // The live API returns an empty agent list for a location it does not know.
-      return { location: { directory: locationDirectory }, agents: [] as UpstreamAgentInfo[] };
+      // A missing location is unavailable, not a successful empty registry.
+      throw new UpstreamHttpError("/api/agent", 404);
     }
     const raw = shiftFixtureTimes(readJson(path.join(this.fixtureDir, file)), this.deltaMs);
     const result = validateAgentList(raw);

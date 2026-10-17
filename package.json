@@ -11,6 +11,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "collector": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=.env scripts/collector.ts",
     "collector:once": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=.env scripts/collector.ts --once",
+    "question-worker": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/question-worker.ts",
     "migrate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=.env scripts/migrate.ts",
     "auth:hash": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=.env scripts/hash-password.ts",
     "test": "vitest run",
@@ -19,11 +20,11 @@
     "verify": "npm run typecheck && npm run lint && npm run build && npm test && npm run test:e2e"
   },
   "dependencies": {
-    "@react-three/fiber": "9.8.1",
+    "@dagrejs/dagre": "^3.1.1",
+    "@xyflow/react": "12",
     "next": "16.4.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "three": "0.186.1"
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
@@ -33,7 +34,6 @@
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/three": "0.186.0",
     "@vitejs/plugin-react": "^6.1.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",

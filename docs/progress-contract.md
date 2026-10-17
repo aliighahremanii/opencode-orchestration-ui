@@ -26,8 +26,10 @@ the database writes.
 
 Only observable facts, each labelled with what it is:
 
-- **Counts of observations** — sessions, invocations, activity events. These are
-  "how much has been observed", not "how much is done".
+- **Counts of observations** — sessions, invocations, activity events and
+  ObservedAssignment session groupings. These are "how much has been observed",
+  not "how much is done". An assignment grouping is not a verified task boundary;
+  neither its turn count nor a changed trigger establishes a new or completed task.
 - **Upstream-reported outcome**, always prefixed "Upstream reported …".
 - **`recently-active`** — an explicitly local recency heuristic over observed
   session timestamps, labelled "Recently active (observed)" so it cannot be read
@@ -37,13 +39,20 @@ Only observable facts, each labelled with what it is:
 - **Collection health** — whether the collector is `running`, `stale`, or
   `stopped`, when it last *succeeded* (separately from when it last attempted),
   where its open gaps are, and which streams were only partly observed. This is
-  the one thing the system *can* state authoritatively: what it has and has not
-  observed.
+  evidence about the observer's retained records and known coverage limits, not
+  proof that all upstream history was observed. A complete retained selected
+  project/run/workspace graph does not make a partial upstream transcript complete.
 
 Note what is deliberately absent from that list: there is no percentage, no
 stage, and no estimate. "Observed so far" is a statement about the observer, and
 it is never presented as a statement about the work. A partial transcript and an
 open gap are shown as limits on what is known, not as evidence of progress.
+
+Assignment status likewise remains an explicit upstream report or `unknown`; it
+does not infer busy state or workflow success. A local task-question job marked
+`blocked` or `ambiguous` describes that job, not source-task progress. Asking is
+hard-disabled in this build; the passive collector remains GET-only. See
+`docs/domain-model.md` and `docs/task-questions.md`.
 
 ## `ProgressReport` today
 

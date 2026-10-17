@@ -477,6 +477,9 @@ function assistantSummary(message: UpstreamAssistantMessage): string {
 // --- ancestry --------------------------------------------------------------
 
 export interface RunTreeSessionInput {
+  readonly projectId?: string;
+  readonly projectKey?: string;
+  readonly connectionId?: string | null;
   readonly sessionId: string;
   readonly parentId: string | null;
   readonly locationId: string;
@@ -595,13 +598,13 @@ export function buildRunTree(
         root = current;
         break;
       }
-      if (parent.locationId !== current.locationId) {
-        crossLocation.push({ sessionId: current.sessionId, parentId: parent.sessionId });
+      if (parent.source !== current.source) {
+        crossSource.push({ sessionId: current.sessionId, parentId: parent.sessionId });
         root = current;
         break;
       }
-      if (parent.source !== current.source) {
-        crossSource.push({ sessionId: current.sessionId, parentId: parent.sessionId });
+      if ((current.projectId && parent.projectId && current.projectId !== parent.projectId) || (parent.locationId !== current.locationId && !(current.connectionId && current.connectionId === parent.connectionId && current.projectKey && current.projectKey === parent.projectKey))) {
+        crossLocation.push({ sessionId: current.sessionId, parentId: parent.sessionId });
         root = current;
         break;
       }
@@ -657,6 +660,7 @@ export function buildRunTree(
 /** Convert a validated upstream session into the tree input shape. */
 export function toRunTreeSession(session: UpstreamSessionInfo, locationId: string, source: ObservationSource): RunTreeSessionInput {
   return {
+    projectId:session.projectId,
     sessionId: session.id,
     parentId: session.parentId,
     locationId,
@@ -685,6 +689,7 @@ export function toRunTreeSession(session: UpstreamSessionInfo, locationId: strin
  * observation as upstream.
  */
 export function fromStoredSession(session: {
+  readonly projectId?: string;
   readonly id: string;
   readonly parentId: string | null;
   readonly locationId: string;
@@ -697,6 +702,7 @@ export function fromStoredSession(session: {
   readonly source: ObservationSource;
 }): RunTreeSessionInput {
   return {
+    projectId:session.projectId,
     sessionId: session.id,
     parentId: session.parentId,
     locationId: session.locationId,

@@ -1,22 +1,21 @@
-# OpenCode studio — the office
+# Tracework — orchestration observation workspace
 
-A spatial Next.js/TypeScript office that observes an existing OpenCode
+A full-viewport dark Next.js/TypeScript workspace that observes an existing OpenCode
 instance: which runs exist, which sessions belong to them, which agents were
 *observed* to run, and how complete the observation actually is.
 
-This build issues only `GET` requests upstream. Both approved manual dispatch
-actions (create session + initial prompt, and continue an existing session) are
-**blocked**, not simulated: the target's authenticated write contract could not
-be verified. The office explains this beside disabled controls. There is no
-automatic scheduling, retry, cancellation, queue management, permission response,
-or configuration mutation.
+This build issues only `GET` requests upstream. The narrow **Ask about this task**
+capability is explicitly disabled: authenticated installed-API discovery succeeded,
+but permission enforcement and collection isolation are not verified. Rejected
+question jobs are durable, bounded, redacted and idempotent. No dispatch, execution,
+delete, edge editing, source interruption, permission reply or configuration mutation exists.
 
 ## What it shows
 
 | Page | Contents |
 | --- | --- |
-| `/` | Authenticated interactive isometric office, project/location directory, distinct invocation seats, profiles, evidence inspector and collection coverage |
-| `/demo` | Owner-authenticated, deterministic synthetic office; server-side session gate, no telemetry API/SSE or command calls from the demo view; no automatic fallback from live mode |
+| `/` | Project sidebar, scoped run graph, session-grouping assignment cards, paged Task/Conversation/Activity inspector, coverage and optional technical drawer |
+| `/demo` | Owner-authenticated synthetic graph fixture; no telemetry API/SSE or upstream calls; never a fallback for failed observation reads |
 | `/overview` | Original observation counts, collector health, recent root runs, recent activity, the retained history window |
 | `/runs` | Searchable, filterable root runs |
 | `/runs/[rootRunId]` | Observed session hierarchy, evidence-backed invocations (with their evidence), the activity timeline, and any collection gaps overlapping the run |
@@ -38,81 +37,26 @@ Three distinctions are enforced throughout, because they are easy to get wrong:
 
 See `docs/domain-model.md` for the full vocabulary.
 
-### Office interaction and truthfulness
+### Workspace interaction and verification
 
-- Select a desk or directory entry to inspect an **Invocation**. Multiple turns
-  of the same agent retain distinct identities. The People tab instead shows
-  location-scoped definitions, including historical registry members.
-- Project/location selection and root-run areas are separate. Seats are stable
-  during refresh, filtering, reconnect, transient read failures and insertion for the mounted view. A
-  run-membership reconciliation moves a seat to its newly observed run, without
-  changing invocation identity. Spatial placement is not a handoff graph. Camera
-  bounds expand with allocated room/seat extents, including temporarily absent
-  observations, so focus remains reachable as rolling history grows.
-- Task text is the recorded trigger message; action text is joined only to that
-  invocation's assistant message, location and provenance. Missing evidence stays
-  unknown. No inferred progress, busy state or completion percentages.
-- The keyboard-accessible directory, native controls and inspector accompany
-  both renderers. Use zoom, pan, reset and focus buttons; Shift-drag also pans 3D.
-  “Read selection details” moves keyboard focus to the inspector.
-- Choose **2D plan** at any time. WebGL initialization failure/context loss falls
-  back without discarding selection. The two renderers share seats/room identity.
-  Camera changes are immediate, with no ambient animation or reconnect replay.
-- Scene renders on demand; hidden documents stop the renderer, office polling
-  and SSE. Reduced-motion preferences disable UI transitions. DPR is capped at
-  1.5 and projected labels at 20; seats use instanced procedural geometry with
-  viewport culling. No external fonts, textures or model downloads are required.
-- `GET /api/office` uses the existing owner authorization and a coherent SQLite
-  read transaction. The DTO exposes up to 100 invocations, 500 profiles and 100
-  locations; the scene caps visible entries at 100. Bounds, coverage gaps, partial
-  streams, collector freshness and disconnected updates are disclosed. Use the
-  existing diagnostics pages for the wider retained history.
-- A transient office-read failure retains the last successful snapshot and the
-  mounted view's selection, location, filters and seats, with an explicit stale
-  notice and original snapshot time. Recovery replaces observations without
-  remounting the view. HTTP authentication/authorization denial or SSE
-  `auth-expired` clears protected observations instead of retaining stale data.
-- `/demo` uses both the normal proxy cookie gate and database-backed server
-  `AuthGate`. Missing cookies redirect to sign-in; forged/revoked sessions cannot
-  receive the synthetic office. Authentication never turns demo observations
-  into live data or opens a telemetry subscription.
+See [workspace interactions](docs/workspace-interactions.md) for scope navigation,
+presentation persistence, evidence semantics and responsive behavior. React Flow
+12 and Dagre replace the retired Three/Fiber presentation. No remote assets load.
 
-### Browser verification
-
-Install the dev-only browser with `npx playwright install chromium`, then run
-`npx vitest run --config vitest.e2e.config.mts tests/e2e/office-browser.test.ts`.
-The suite builds/starts a disposable fixture-backed server. No prompt or mutation
-is sent upstream. It checks desktop/mobile interaction, reduced motion, forced
-WebGL failure, demo network isolation, authenticated reads, error behavior,
-hidden rendering, and synthetic 10-seat/2-room/2-event-s and
-100-seat/10-room/20-event-s invalidation workloads. Screenshots and measurements
-are written to `/tmp/opencode/living-office/review-fixes/browser/` (the original
-implementation measurements remain in `/tmp/opencode/living-office/browser/`).
-
-The reference validation environment is a headless Linux VM using Chromium
-SwiftShader, **not a target GPU/device**. RAF intervals and browser main-thread
-task time are proxies, not GPU frame timings or per-frame application CPU.
-Actual-device performance and screen-reader verification remain outstanding.
-
-2026-10-16 software-rendered sample (10-second windows, active synthetic DTO
-changes, 1440×1050 viewport, DPR 1):
-
-| Seats / rooms / events per second | Local cold scene | RAF p95 / p99 | >50 ms | Draw calls / triangles | Main-thread task time over 10 s |
-| --- | --- | --- | --- | --- | --- |
-| 10 / 2 / 2 | 733 ms | 16.8 / 16.8 ms | 0.34% | 44 / 12,176 | 768 ms |
-| 100 / 10 / 20 | 587 ms | 16.8 / 16.8 ms | 0.17% | 68 / 42,284 | 1,144 ms |
-
-These are one-run observations, not release guarantees or a baseline on actual
-hardware. The 100-seat view culls offscreen geometry. A simulated hidden document
-added zero rendered frames over 30 seconds after a one-second settling window.
-Twenty button-to-two-RAF samples had p95 33 ms and max 310.2 ms; that proxy is
-not a true interaction-to-paint measurement. Per-frame app CPU and GPU timings
-remain unmeasured. Procedural scene assets require zero downloaded model/texture
-bytes; JavaScript bundles are a separate cost.
+`bun --no-env-file run test:e2e -- tests/e2e/workspace-browser.test.ts` exercises the production
+build with disposable fixture data. Install Chromium using `bunx playwright install
+chromium` first. Screenshots default to
+`/tmp/opencode/orchestration-workspace-reset/browser/`; override with
+`WORKSPACE_E2E_ARTIFACTS`. Sizes: 1440×900, 768×1024, 390×844 and a reduced-height
+keyboard simulation. These are browser tests, not actual-device or screen-reader certification.
 
 ## Architecture
 
-Two processes, one SQLite database, one writer.
+Web and passive collector share SQLite. The optional `questions` Compose profile
+adds a separate fail-closed question recovery worker. Observation writes still
+belong only to the lease-fenced collector; short local question transactions never
+hold a database lock across network operations. No enabled upstream question
+mutation adapter is shipped. See [question safety](docs/task-questions.md).
 
 ```
                        ┌───────────────────────────┐
@@ -124,18 +68,20 @@ Two processes, one SQLite database, one writer.
                               ┌──────▼──────┐
                               │   SQLite    │  WAL, one filesystem
                               └──────┬──────┘
-                                     │ reads
+                                     │ reads; local auth/job writes
                        ┌─────────────▼─────────────┐
    browser ──────────▶ │ web (Next.js)             │
    (same origin only)  │  · owner auth (fail closed)│
-                       │  · read-only JSON API      │
+                       │  · observation read API    │
+                       │  · blocked question jobs   │
                        │  · SSE from change log     │
                        └───────────────────────────┘
 ```
 
-- **`web`** serves pages and a read-only JSON API, and is the only thing the
-  browser talks to. It never contacts upstream, and it has no code path that can.
-- **`collector`** is the only writer. It owns a lease in the database so exactly
+- **`web`** serves pages, observation reads, owner authentication and the narrow
+  local question-job endpoint. It is the only thing the browser talks to. It never
+  contacts upstream, and it has no code path that can.
+- **`collector`** is the only observation writer. It owns a lease in the database so exactly
   one collector can write, and **every** write it makes — observations *and* its
   own metadata (state, checkpoints, gaps) — is fenced by that lease inside the
   same transaction as the write. A stale collector therefore cannot commit
@@ -144,6 +90,9 @@ Two processes, one SQLite database, one writer.
   lease mid-run.
 - **`SQLite`** in WAL mode on a single filesystem, so readers are not blocked by
   the writer.
+- **`question-worker`** is optional and performs local job recovery/retention only.
+  It shares SQLite through short transactions, never the collector lease. It does
+  not create, fork, prompt or interrupt upstream sessions in this build.
 
 ### Why reconciliation instead of the event stream
 
@@ -159,8 +108,20 @@ cannot be proven covered is recorded as a **gap** and shown on `/status`:
 
 - a gap is **opened** on the first failure (or when a pause exceeds the tolerance,
   or when a lease handover is detected) and stays open across repeated failures;
-- it is **closed** only once a cycle genuinely succeeds, at which point it is
-  marked resumed. A gap is never marked resumed before success.
+- cycle/lease gaps are **closed** only once a cycle genuinely succeeds. A
+  location registry gap closes only after that location's successful snapshot,
+  never because an unrelated location succeeded or it aged out of the fetch window.
+
+A historical session may reference a removed directory. If its `/api/agent` read
+returns HTTP 404, collection continues for other registries and all fetched
+sessions/messages. Previous agent membership and its checkpoint remain unchanged;
+`/status` shows a location-specific warning and open `agents:<locationId>` gap.
+Until recovery, cycle health remains failed and `collector:once` exits 1, but its
+counts accurately describe committed work, even before a later fatal error. Only
+a typed HTTP 404 from that exact registry request is tolerated; other required
+read failures remain fatal. An explicit successful empty registry still marks
+previous membership inactive. Recovery closes the matching gap; its warning remains
+historical, not evidence of a still-open gap.
 
 Two further consequences of a bounded fetch:
 
@@ -239,12 +200,12 @@ ORCH_UPSTREAM_PASSWORD=...
   live view, point `ORCH_DB_PATH` at a fresh database rather than reusing the demo
   one; the two provenances are never blended into one run.
 
-> **Verification status.** In this repository's development environment the
-> upstream instance returned `401` to every unauthenticated request, and its
-> credential file must not be read, so **no live smoke test was performed**. All
-> behaviour is verified against local fixtures shaped to the published API spec,
-> and the code validates every upstream payload at runtime. No live integration
-> is claimed.
+> **Verification status.** The initial unauthenticated probes returned `401`.
+> Later bounded live-read evidence and its limits are recorded in
+> [OpenCode compatibility](docs/opencode-compatibility.md). The stale-location 404
+> fix passed focused independent regression tests and a GET-only synthetic HTTP
+> E2E through the actual one-shot collector, including failure and recovery exits.
+> It has not been rerun against the user's live upstream or existing database.
 
 ## Deployment
 
@@ -639,20 +600,35 @@ exists so a green lint result means something about this project's own code;
 | --- | --- |
 | `tests/unit` | Redaction and truncation (including **camelCase and compound secret keys** — `accessToken`, `secretAccessKey`, `SecretKey` — in raw/quoted/escaped forms, **whole object and array values under a credential key**, key-aware structured redaction, quoted/escaped JSON keys, quoted env values, idempotency, bounded scan), normalization (identity, dedupe, ordering, the invocation rule, outcome attribution, **per-run provenance derivation and the fixture/upstream partition**), **same-origin `?next=` validation**, payload validation (**including a structured tool input redacted before it is serialised**), config validation, password hashing, CSRF/origin, cookie policy, throttle identity, display formatting |
 | `tests/integration` | Lease fencing and epoch takeover across two connections, **lease heartbeating through a cycle longer than the TTL**, **fenced collector metadata (a stale collector cannot overwrite state or checkpoints)**, migration safety, **the v1 → v2, v2 → v3, v3 → v4, v4 → v5 and v5 → v6, v6 → v7, v7 → v8, v8 → v9 and v9 → v10 upgrade paths (including camelCase-redaction reprocessing, the frozen v3 data step, the versioned data-step checksum, v4 repairing every display field and raising the activity `redacted` badge without a collection cycle, v5 converging stored data on the corrected redaction policy and flagging historical rows v3 repaired, v6 repairing a stored escaped (double-encoded) credential a pre-fix v5 left behind, v7 repairing an escaped sibling token, an escaped-quote value tail and a primitive array a pre-fix v6 left behind, v8 repairing a nested encoded document, an over-long URL userinfo and a malformed escaped primitive a pre-fix v7 left behind, v9 repairing a credential in the plaintext beside an escaped quoted phrase a pre-fix v8 left behind, and v10 repairing a credential assignment inside an escaped string a pre-fix v9 left behind)**, restart persistence, write idempotency, the change log, the collector against fixtures (orphans, cross-location links, duplicate pages, unknown message types, secrets, gap open/resume lifecycle, **partial transcripts**, **agent deactivation**, **run-reference reconciliation across a rebuilt hierarchy**, **provenance across a source switch**), auth session lifecycle |
-| `tests/architecture` | No client module can reach the upstream adapter or the database; only sign-in/sign-out export a mutating method; the upstream adapter is GET-only; no credential file is read; no `NEXT_PUBLIC_` variable exists |
+| `tests/architecture` | No client module can reach the upstream adapter or database; web cannot reach upstream; mutating handlers are restricted to sign-in/sign-out and local question jobs; the passive adapter is GET-only; question capability is fail-closed; application code does not read credential files; no `NEXT_PUBLIC_` variable exists |
 | `tests/e2e` | A real production build served by `next start`: the auth boundary, the read API, SSE resume, **SSE termination on session revocation**, **the accepted `since` cursor range**, redaction, restart persistence, fail-closed behaviour without a credential, and **the documented quickstart sequence run through the npm scripts** |
 
 Regression coverage for each review finding lives in
 `tests/integration/review-findings.test.ts`, which names the defect each block
 pins down.
 
-The HTTP E2E suite drives the server with Node's built-in `fetch`.
-`tests/e2e/office-browser.test.ts` additionally uses dev-only Playwright Chromium
-for rendered office interaction, fallback, responsiveness, screenshots and
-software-rendered workload measurements (see Browser verification above).
-The legacy quickstart suite reads/backs up a repository `.env`; it was not run
-in the living-office pass because credential-file access is prohibited. Run it
-only in a separate disposable checkout containing exclusively synthetic config.
+The HTTP E2E suite drives the server with Node's built-in `fetch`. Use
+`bun --no-env-file run test` and `bun --no-env-file run test:e2e` to prevent Bun
+itself from loading checkout dotenv; both Vitest configurations disable Vite dotenv
+loading as well. Every E2E Next build/dev/start runs in a fresh allowlisted source
+and dependency copy under the task temporary directory, with no reused checkout
+build, source/config/dependency symlink back to the checkout, or inherited upstream
+credentials. Child-process instrumentation rejects dotenv reads outside that
+owned app directory. Synthetic canary tests and build/server audit assertions
+verify this isolation. Application copies and audit files remain for review/cleaner.
+Run Bun package scripts with the Node binary directory first on `PATH`: E2E Next
+and SQLite processes require Node. The guard is delivered using both
+`NODE_OPTIONS=--require` and `BUN_OPTIONS=--preload`; runtime markers verify loading
+for each child. A missing marker reports an actionable guard/runtime error rather
+than a missing audit-file ENOENT. Synthetic tests exercise native Node, native Bun,
+and a Bun script wrapper launching Node without inherited credentials.
+`tests/e2e/workspace-browser.test.ts` additionally uses dev-only Playwright Chromium
+for rendered graph/list interaction, URL scopes, responsive screenshots, viewport
+stability, stale/auth transitions and the disabled question boundary. The quickstart
+suite now writes synthetic configuration only in a disposable sandbox; it does not
+read, back up or replace the repository `.env`. Workspace integration regressions
+cover nine turns in one grouping, attribution, identity boundaries, more than 200
+assignments, more than 200 detail records, unrelated runs and question-job recovery.
 
 ## Operational notes
 
@@ -672,7 +648,8 @@ only in a separate disposable checkout containing exclusively synthetic config.
   is the value the proxy itself appended.
 - **CSRF.** State-changing requests are rejected without a same-origin `Origin`
   header, and cross-site `Sec-Fetch-Site` values are refused before the origin is
-  even read. There are only two such endpoints: sign-in and sign-out.
+  even read. The permitted endpoints are sign-in, sign-out and the narrowly
+  authenticated local question-job route. None proxies an upstream mutation.
 - **Live updates.** The dashboard's change stream is served from this
   application's own durable change log, and the session is re-validated while the
   stream is open. Revoking or expiring the session ends the stream with an
@@ -721,10 +698,14 @@ only in a separate disposable checkout containing exclusively synthetic config.
 Implemented: dynamic effective-agent discovery, root runs, an evidence-backed
 invocation and session graph, details and timelines, historical browsing,
 reliable collection with reconnect and gap state, SQLite persistence with a
-dedicated collector, secure single-owner auth, an isolated synthetic office demo,
-interactive procedural 3D office with equivalent 2D fallback, an evidence
-inspector, and Docker/Compose/Caddy deployment instructions. Both approved manual
-dispatch actions are blocked pending authenticated target-contract verification.
+dedicated GET-only collector, secure single-owner auth, namespaced project and
+workspace metadata, stable session-fallback assignment projections, a complete
+retained-scope React Flow graph, responsive synchronized list, paged evidence
+inspector, isolated synthetic preview and Docker/Compose deployment scaffolding.
+The narrow question boundary stores blocked jobs and supplies a separate local
+recovery worker. Read-only investigation execution remains disabled: actual
+permission enforcement and publication isolation are not verified. General
+dispatch/execution/delete/edge editing are not part of this workspace.
 
 Documented only, with no runtime implementation: the future tracker and
 dispatcher interfaces (`TaskSource`, `TaskAssignment`, `RunLauncher`,
@@ -738,3 +719,5 @@ dispatcher interfaces (`TaskSource`, `TaskAssignment`, `RunLauncher`,
 - `docs/domain-model.md` — the vocabulary and the rules that decide which records
   may be created
 - `docs/progress-contract.md` — how progress is (and is not) represented
+- `docs/workspace-interactions.md` — scope navigation, evidence semantics and responsive presentation
+- `docs/task-questions.md` — disabled capability, local job guarantees and prerequisites for safe investigations

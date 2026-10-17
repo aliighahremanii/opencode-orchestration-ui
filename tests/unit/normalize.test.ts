@@ -620,6 +620,7 @@ describe("toRunTreeSession", () => {
       locationDirectory: "/x",
     };
     expect(toRunTreeSession(upstream, "loc_1", "upstream")).toEqual({
+      projectId:"prj",
       sessionId: "ses_a",
       parentId: "ses_b",
       locationId: "loc_1",

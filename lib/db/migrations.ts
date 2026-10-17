@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { WORKSPACE_SCHEMA } from "./workspace-schema.ts";
 import { execute, immediateTransaction, queryAll, queryOne, type Db } from "./driver.ts";
 import {
   reprocessLegacyRedaction,
@@ -702,6 +703,7 @@ export const MIGRATIONS: readonly Migration[] = [
       reprocessPersistedRedactionV18(db);
     },
   },
+  { version: 19, name: "observation-workspace-and-question-boundary", statements: WORKSPACE_SCHEMA },
 ];
 
 /**

@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { assertGuardLoaded, assertIsolatedRuntime, createIsolatedApp, isolatedAppEnv } from "../helpers/isolated-app.ts";
 
 /**
  * E2E harness.
@@ -15,6 +16,24 @@ import path from "node:path";
 
 export const REPO_ROOT = process.cwd();
 export const OWNER_PASSWORD = "e2e-owner-password-9f2c";
+let applicationDirectory:string|undefined;
+let build:Promise<void>|undefined;
+export function getTestAppDirectory():string {
+  return applicationDirectory ??= createIsolatedApp(REPO_ROOT);
+}
+export function assertIsolatedDotenvReads():void {
+  const directory=getTestAppDirectory();assertGuardLoaded(directory);
+  const auditPath=path.join(directory,"dotenv-access.jsonl");
+  if(!existsSync(auditPath))throw new Error("E2E guard loaded, but no synthetic dotenv read was audited. Check the child runtime and sandbox configuration; do not run Next from the checkout.");
+  const audit=readFileSync(auditPath,"utf8").trim().split("\n").map(line=>JSON.parse(line) as {file:string;allowed:boolean});
+  if(!audit.some(row=>row.file===".env"&&row.allowed)||audit.some(row=>!row.allowed))
+    throw new Error("Next dotenv access escaped the isolated application or instrumentation did not observe the synthetic dotenv.");
+}
+function appDirectory(cwd?:string):string {
+  const owned=getTestAppDirectory();
+  if(cwd!==undefined&&cwd!==owned)throw new Error("E2E processes must run in their isolated application copy.");
+  return owned;
+}
 
 export interface ServerHandle {
   readonly baseUrl: string;
@@ -44,24 +63,18 @@ export async function freePort(): Promise<number> {
 }
 
 function childEnv(overrides: Record<string, string>): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  // Start from a clean ORCH_* surface so the developer's shell cannot change the
-  // outcome of the suite.
-  for (const key of Object.keys(env)) {
-    if (key.startsWith("ORCH_")) delete env[key];
-  }
-  return { ...env, ...overrides };
+  return isolatedAppEnv(getTestAppDirectory(),overrides);
 }
 
 export async function runCollectorOnce(dbPath: string, dataDir: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "scripts/collector.ts", "--once"], {
-      cwd: REPO_ROOT,
+      cwd: appDirectory(),
       env: childEnv({
         ORCH_DB_PATH: dbPath,
         ORCH_DATA_DIR: dataDir,
         ORCH_UPSTREAM_MODE: "fixture",
-        ORCH_FIXTURE_DIR: path.join(REPO_ROOT, "fixtures"),
+        ORCH_FIXTURE_DIR: path.join(getTestAppDirectory(), "fixtures"),
         ORCH_FIXTURE_STATIC_TIME: "1",
       }),
       stdio: ["ignore", "pipe", "pipe"],
@@ -80,9 +93,11 @@ export async function runCollectorOnce(dbPath: string, dataDir: string): Promise
 }
 
 export async function buildApp(): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
+  const directory=appDirectory();
+  assertIsolatedRuntime(directory,process.execPath,"node");
+  build ??= new Promise<void>((resolve, reject) => {
     const child = spawn(process.execPath, [path.join("node_modules", "next", "dist", "bin", "next"), "build"], {
-      cwd: REPO_ROOT,
+      cwd: directory,
       env: childEnv({}),
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -95,10 +110,13 @@ export async function buildApp(): Promise<void> {
     });
     child.on("error", reject);
     child.on("close", (code) => {
+      try{assertGuardLoaded(directory,child.pid);}catch(error){reject(error);return;}
       if (code === 0) resolve();
       else reject(new Error(`next build failed with code ${code}:\n${output.slice(-4000)}`));
     });
   });
+  await build;
+  assertIsolatedDotenvReads();
 }
 
 export interface StartOptions {
@@ -118,10 +136,10 @@ export async function startServer(options: StartOptions): Promise<ServerHandle> 
     ORCH_DB_PATH: options.dbPath,
     ORCH_DATA_DIR: options.dataDir,
     ORCH_UPSTREAM_MODE: "fixture",
-    ORCH_FIXTURE_DIR: path.join(REPO_ROOT, "fixtures"),
+    ORCH_FIXTURE_DIR: path.join(getTestAppDirectory(), "fixtures"),
     ORCH_FIXTURE_STATIC_TIME: "1",
-    // Next loads local dotenv files. Explicit empty values keep the no-owner
-    // scenario hermetic without reading or backing up any credential file.
+    // Next only sees the copied application's synthetic dotenv, never checkout
+    // dotenv. Explicit values isolate each owner's scenario within that sandbox.
     ORCH_OWNER_PASSWORD: "",
     ORCH_OWNER_PASSWORD_HASH: "",
     ORCH_COOKIE_SECURE: options.cookieSecure ?? "auto",
@@ -142,8 +160,8 @@ export async function startServer(options: StartOptions): Promise<ServerHandle> 
     process.execPath,
     [path.join("node_modules", "next", "dist", "bin", "next"), options.mode ?? "start", "-p", String(port)],
     {
-      cwd: REPO_ROOT,
-      env: childEnv(overrides),
+      cwd: appDirectory(),
+      env: childEnv({...overrides,NODE_ENV:options.mode==="dev"?"development":"production"}),
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -174,10 +192,12 @@ export async function startServer(options: StartOptions): Promise<ServerHandle> 
         });
         child.kill("SIGTERM");
       });
+      assertIsolatedDotenvReads();
     },
   };
 
   await waitForReady(origin, () => output, child);
+  assertGuardLoaded(getTestAppDirectory(),child.pid);
   return handle;
 }
 
@@ -353,7 +373,7 @@ export interface NpmRunResult {
 }
 
 /**
- * Run an npm script from the repository root with a clean ORCH_* environment.
+ * Run an npm script from the isolated application with an allowlisted environment.
  *
  * Used to verify the documented quickstart: the scripts must be the entrypoints a
  * user actually runs, so they are spawned by name rather than by re-deriving
@@ -367,7 +387,7 @@ export async function runNpmScript(
 ): Promise<NpmRunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn("npm", ["run", script, ...(args.length > 0 ? ["--", ...args] : [])], {
-      cwd: options.cwd ?? REPO_ROOT,
+      cwd: appDirectory(options.cwd),
       env: childEnv(env),
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -405,11 +425,11 @@ export function repoPathExists(relative: string): boolean {
  * file, which is exactly what the quickstart relies on.
  */
 export async function startServerViaNpm(
-  options: { readonly port: number },
+  options: { readonly port: number; readonly cwd?:string },
 ): Promise<{ baseUrl: string; stop(): Promise<void>; output(): string }> {
   const baseUrl = `http://127.0.0.1:${options.port}`;
   const child = spawn("npm", ["run", "start", "--", "-p", String(options.port)], {
-    cwd: REPO_ROOT,
+    cwd: appDirectory(options.cwd),
     env: childEnv({}),
     stdio: ["ignore", "pipe", "pipe"],
     // A new process group lets the teardown signal the whole tree. `npm` does not
@@ -438,6 +458,7 @@ export async function startServerViaNpm(
       });
       killGroup("SIGTERM");
     });
+    assertIsolatedDotenvReads();
   };
 
   const killGroup = (signal: NodeJS.Signals): void => {
@@ -461,6 +482,7 @@ export async function startServerViaNpm(
     if (child.exitCode !== null) {
       throw new Error(`npm run start exited with code ${child.exitCode}:\n${output.slice(-4000)}`);
     }
+    let ready=false;
     try {
       const response = await fetch(`${baseUrl}/login`, {
         redirect: "manual",
@@ -468,10 +490,11 @@ export async function startServerViaNpm(
         // responds would hang this probe indefinitely instead of retrying.
         signal: AbortSignal.timeout(2_000),
       });
-      if (response.status === 200) return { baseUrl, stop, output: () => output };
+      ready=response.status===200;
     } catch {
       // Not listening (or not responding) yet.
     }
+    if(ready){assertGuardLoaded(getTestAppDirectory(),child.pid);return { baseUrl, stop, output: () => output };}
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   await stop();

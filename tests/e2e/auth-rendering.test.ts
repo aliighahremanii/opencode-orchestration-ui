@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { mkdir, writeFile } from "node:fs/promises";
 import { OWNER_PASSWORD, buildApp, http, login, makeDataDir, removeDataDir, startServer, type ServerHandle } from "./harness.ts";
 
-const ARTIFACTS = "/tmp/opencode/living-office/auth-io";
+const ARTIFACTS = process.env.AUTH_E2E_ARTIFACTS ?? "/tmp/opencode/orchestration-workspace-reset/auth-io";
 const BLOCKING_DIAGNOSTIC = /Blocking Route|current time|Date\.now\(\)|blocking-route|sync-io/i;
 
 beforeAll(async () => { await mkdir(ARTIFACTS, { recursive: true }); await buildApp(); }, 300_000);

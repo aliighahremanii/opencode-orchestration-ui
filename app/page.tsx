@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { LiveOffice } from "../components/office/office-view.tsx";
+import { Workspace } from "../components/workspace/workspace.tsx";
 import { AuthGate } from "../components/server/auth-gate.tsx";
 
 /**
@@ -14,7 +14,7 @@ export default function Page() {
     <>
       <Suspense fallback={<p className="text-sm text-muted">Checking your session…</p>}>
         <AuthGate>
-          <LiveOffice />
+          <Workspace />
         </AuthGate>
       </Suspense>
     </>

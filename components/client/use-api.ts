@@ -57,7 +57,8 @@ export interface UseApiResult<T> {
  */
 export function useApi<T>(path: string | null, options: UseApiOptions = {}): UseApiResult<T> {
   const { pollMs } = options;
-  const [state, setState] = useState<ApiState<T>>({ status: "loading" });
+  const [result, setResult] = useState<{path:string|null;state:ApiState<T>}>({ path:null,state:{status:"loading"} });
+  const state:ApiState<T> = result.path===path ? result.state : {status:"loading"};
   const abortRef = useRef<AbortController | null>(null);
   const requestRefreshRef = useRef<(() => void) | null>(null);
 
@@ -67,6 +68,7 @@ export function useApi<T>(path: string | null, options: UseApiOptions = {}): Use
 
   useEffect(() => {
     if (path === null) return;
+    const setState=(state:ApiState<T>)=>setResult({path,state});
 
     let cancelled = false;
     const controller = new AbortController();

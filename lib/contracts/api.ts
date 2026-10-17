@@ -340,37 +340,3 @@ export interface EventsHelloPayload {
   readonly latestSeq: number;
   readonly resumeFrom: number;
 }
-
-// --- office: observation-only presentation boundary ------------------------
-export interface OfficeInvocation extends InvocationItem {
-  readonly locationId: string;
-  readonly projectId: string | null;
-  readonly assistantMessageId: string;
-  /** Only the explicitly recorded trigger message, never a guessed task. */
-  readonly task: ActivityItem | null;
-  /** Only activity belonging to this invocation's assistant message. */
-  readonly action: ActivityItem | null;
-}
-
-export interface OfficeResponse {
-  readonly generatedAt: number;
-  readonly source: "live" | "fixture" | "demo";
-  readonly collector: CollectorHealth;
-  readonly locations: readonly LocationItem[];
-  readonly agents: readonly AgentItem[];
-  readonly runs: readonly RootRunSummary[];
-  readonly invocations: readonly OfficeInvocation[];
-  readonly coverage: {
-    readonly openGaps: number;
-    readonly partialStreams: number;
-    readonly totalInvocations: number;
-    readonly totalAgents: number;
-    readonly totalLocations: number;
-    readonly limited: boolean;
-  };
-  readonly dispatch: {
-    readonly create: false;
-    readonly continue: false;
-    readonly reason: string;
-  };
-}

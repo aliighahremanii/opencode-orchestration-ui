@@ -11,6 +11,7 @@ import tsconfigPaths from "vite-tsconfig-paths";
  * A single fork is used because the suite manages one server and one database.
  */
 export default defineConfig({
+  envDir: false,
   plugins: [tsconfigPaths()],
   test: {
     environment: "node",

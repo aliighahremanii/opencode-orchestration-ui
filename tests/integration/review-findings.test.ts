@@ -1382,7 +1382,7 @@ describe("redaction durability — a collector cycle after migration 4 stores on
   it("redacts every diagnostic field a cycle writes, and leaves the ids and joins intact", async () => {
     // The harness runs every migration, so migration 4's data step has already
     // run: this exercises the write path a later cycle uses, not the migration.
-    expect(currentSchemaVersion(test.db)).toBe(18);
+    expect(currentSchemaVersion(test.db)).toBe(19);
 
     const directory = "/srv/demo";
     const locationId = locationIdFor(directory);

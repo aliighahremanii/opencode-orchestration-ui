@@ -32,6 +32,9 @@ export interface AgentList {
 }
 
 export interface UpstreamSource {
+  readonly connectionId?: string;
+  listProjects?(): Promise<readonly { id: string; root: string; name: string | null }[]>;
+  workspaceMetadata?(directory: string, projectId: string): Promise<{ branch: string | null; vcsState: "verified" | "unavailable" | "unknown"; worktreeState: "verified" | "unavailable" | "unknown" }>;
   readonly kind: "fixture" | "live";
   /** Human-readable description shown at /status. Never includes credentials. */
   readonly description: string;

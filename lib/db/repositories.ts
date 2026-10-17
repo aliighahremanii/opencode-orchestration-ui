@@ -368,11 +368,11 @@ export function listSessions(db: Db, query: SessionListQuery): Session[] {
  * `limit` is a safety bound against unbounded memory; it is far above the
  * per-cycle history bound and is not a retention policy.
  */
-export function listStoredSessionsForTree(db: Db, limit = 50_000): Session[] {
+export function listStoredSessionsForTree(db: Db, limit?:number): Session[] {
   return queryAll<SessionRow>(
     db,
-    "SELECT * FROM sessions ORDER BY time_updated DESC LIMIT ?",
-    [limit],
+    `SELECT * FROM sessions ORDER BY time_updated DESC${limit===undefined?"":" LIMIT ?"}`,
+    limit===undefined?[]:[limit],
   ).map(toSession);
 }
 
@@ -980,14 +980,23 @@ export function openGap(
 /**
  * Close every open gap for a scope, now that a cycle has succeeded.
  *
- * This is the only place a gap becomes `resumed`. Until it runs, the gap stays
- * open, which is what keeps an outage visible across a run of failed attempts.
+ * Callers needing stream-specific proof must use closeOpenGapsForStream instead;
+ * a successful cycle cannot prove recovery of a registry outside its fetch window.
  */
 export function closeOpenGaps(db: Db, scope: string, endedAt: number): number {
   return execute(
     db,
     "UPDATE collection_gaps SET ended_at = ?, resumed = 1, open = 0 WHERE scope = ? AND open = 1",
     [endedAt, scope],
+  ).changes;
+}
+
+/** Resolve only the coverage stream whose observations successfully committed. */
+export function closeOpenGapsForStream(db: Db, scope: string, stream: string, endedAt: number): number {
+  return execute(
+    db,
+    "UPDATE collection_gaps SET ended_at = ?, resumed = 1, open = 0 WHERE scope = ? AND stream = ? AND open = 1",
+    [endedAt, scope, stream],
   ).changes;
 }
 

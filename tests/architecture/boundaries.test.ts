@@ -31,6 +31,7 @@ const FORBIDDEN_FROM_CLIENT = [
   "lib/auth/origin.ts",
   "lib/http/",
   "lib/config.ts",
+  "lib/questions/",
   "scripts/",
   "proxy.ts",
 ];
@@ -216,7 +217,7 @@ describe("server boundaries", () => {
 
   it("keeps the application read-only: no route handler exports a mutating method", () => {
     // The only permitted mutations are the owner's own sign-in and sign-out.
-    const allowed = new Set(["app/api/auth/login/route.ts", "app/api/auth/logout/route.ts"]);
+    const allowed = new Set(["app/api/auth/login/route.ts", "app/api/auth/logout/route.ts", "app/api/questions/route.ts"]);
     const violations: string[] = [];
     for (const file of all) {
       if (!file.startsWith("app/api/") || !file.endsWith("/route.ts")) continue;
@@ -236,6 +237,15 @@ describe("server boundaries", () => {
     expect(source).toContain('method: "GET"');
     expect(source).toContain('redirect: "error"');
     expect(source).not.toMatch(/method:\s*"(POST|PUT|PATCH|DELETE)"/);
+  });
+
+  it("keeps question submission local and fail-closed, with no upstream adapter in web or worker",()=>{
+    const route=readSource("app/api/questions/route.ts");
+    expect(route).toContain("authenticate(request)");
+    expect(route).toContain("recordQuestion");
+    expect(route).toContain("bytes>18000");
+    expect(readSource("lib/questions/capability.ts")).toContain("enabled: false");
+    expect([...reachableFrom(["scripts/question-worker.ts"])] .some(f=>f.startsWith("lib/upstream/"))).toBe(false);
   });
 
   it("never reads a credential file", () => {

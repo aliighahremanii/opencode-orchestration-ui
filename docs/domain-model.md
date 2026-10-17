@@ -1,7 +1,8 @@
 # Domain model
 
 The vocabulary this system uses, and the rules that decide which records may be
-created. The types live in `lib/domain/types.ts`; this document explains them.
+created. Evidence types live in `lib/domain/types.ts`; workspace projections live
+in `lib/contracts/workspace.ts`. This document explains both.
 
 The whole design turns on one distinction:
 
@@ -33,8 +34,9 @@ directory. It is the scope for two things:
 - the **effective agent registry** — `GET /api/agent` is queried per location, so
   the agents available in one checkout are not assumed to be available in
   another;
-- **run grouping** — a parent link that crosses a location boundary is not
-  followed, because a session in a different checkout is not part of this run.
+- **run grouping** — crossing locations is permitted only with an explicit parent
+  link and verified matching project, connection and source identities. Unknown or
+  conflicting boundaries are not followed.
 
 ### AgentDefinition
 
@@ -65,11 +67,20 @@ An `AgentDefinition` also carries `active`, which records whether the latest
   location, every previously known agent for that location becomes inactive.
   That is the API's answer, and it is recorded as such rather than treated as a
   missing response.
+- **An unavailable registry is not an empty snapshot.** A location-scoped
+  `UpstreamHttpError` with path `/api/agent` and status 404, caught only around
+  that registry request, preserves the last successful membership, agent timestamps
+  and checkpoint. The observed Location/Workspace and its sessions/messages may
+  still be collected. A deduplicated `agent-registry-unavailable` warning and
+  `agents:<locationId>` gap expose the missing coverage; only a committed successful
+  snapshot for that location in the same collector scope closes the gap.
+  The warning remains historical evidence after recovery, not an open-gap indicator.
 
 ### Root Run
 
 A root session (one with no `parentID`) plus every session **observed** to
-descend from it within the same location.
+descend from it within the verified project/connection/source boundary. Legacy
+unknown-connection observations remain location-bounded.
 
 Two honesty rules:
 
@@ -87,7 +98,7 @@ ancestry rules:
   instance. That is why `fromStoredSession` carries the stored `source` through
   and `buildRunTree` reads it from the root observation.
 - A parent link that crosses a **provenance boundary** is not followed, exactly as
-  a cross-location link is not followed. A fixture session is never attached under
+  an unverified cross-location link is not followed. A fixture session is never attached under
   an upstream parent (or the reverse), so the two provenances can never be blended
   into one run. The link is reported as a warning (`cross-source`) instead.
 
@@ -103,7 +114,35 @@ this cycle's bounded fetch, and activity a partial transcript did not re-read, a
 repointed too. Nothing is recreated and nothing is deleted; only the run pointer
 changes.
 
-### Session
+### ObservedAssignment
+
+A stable projection above Invocation turns, not the reserved external tracker
+`TaskAssignment`. The installed upstream does not expose a verified assignment
+lifecycle, so this build uses one explicitly labeled **session grouping** per
+session (`grouping: "session-fallback"`). Task boundaries are unavailable, not
+inferred. Neither `lastTrigger` changes (user, system or synthetic messages), tool
+calls nor repeated agent names establish task boundaries. Separate observed
+sessions remain separate groupings, including parallel children; distinct agent
+attributions within a grouping are retained rather than collapsed to one role.
+Assignment IDs do not depend on the changeable RootRun identity; membership
+reconciliation updates their run references transactionally
+(`lib/db/workspace.ts`, `reconcileAssignments`).
+
+### Project and Workspace identity
+
+A **Project** is a namespaced observed upstream project identity, not a Root Run
+or a task. A **Workspace** is the persisted location within that project used to
+scope observation and navigation; it is not proof of a Git worktree or an
+allocation by the reserved `WorkspaceAllocator`.
+
+Project and workspace identity are persisted separately. Project keys namespace
+upstream identity by connection and source. Live location/session identities also
+include that namespace; legacy observations retain unknown connection provenance
+rather than being silently adopted. Authoritative root/display metadata and VCS
+observations carry provenance/time; missing branch/worktree metadata stays unknown
+or unavailable. An alias changes display only. No branch is inferred from paths.
+
+### Session (evidence)
 
 A session as observed upstream, including the `parentID` used for ancestry.
 
@@ -291,9 +330,15 @@ A gap has an explicit lifecycle:
   failed attempts re-asserts one gap rather than creating one per attempt.
 - **Open** (`open: true`, `resumed: false`) while the window is unresolved. An
   open gap is reported as such, and the overview counts it.
-- **Closed** (`open: false`, `resumed: true`) only once a cycle genuinely
-  succeeds. **A gap is never marked resumed before success**, so an outage cannot
-  be hidden by a later attempt that also failed.
+- **Closed** (`open: false`, `resumed: true`) only after successful observation of
+  the affected stream: a full successful cycle closes `cycle`/`lease` gaps;
+  a committed registry snapshot closes only its `agents:<locationId>` gap.
+  An unobserved location's gap survives later bounded fetch windows.
+
+Any unresolved registry gap keeps cycle health failed (`ok: false`,
+`lastCycleOk: false`) and preserves `lastSuccessAt`, even when independent
+observations commit. Cycle counters describe committed observations, not net new
+rows; later failures retain those counts and exclude rolled-back batches.
 
 Coverage is measured from the last **successful** cycle, not the last attempt.
 Measuring from the last attempt would let a sustained outage keep pushing the
@@ -348,42 +393,58 @@ rather than as running. `last_success_at` is tracked separately from
 `last_cycle_at`, so a failure cannot erase the record of when coverage was last
 actually proven.
 
-## Office presentation
+## Workspace presentation
 
-The authenticated `/` office is a semantic presentation of observations; it is
-not a scheduler, execution engine, or proof that work succeeded. As described in
-`README.md` under “Office interaction and truthfulness”:
+The authenticated `/` workspace presents observations, not a scheduler, execution
+engine or verdict. See `workspace-interactions.md` for navigation and controls.
 
-- A desk or directory entry selects an **Invocation**. Multiple turns of the same
-  agent remain distinct; a profile represents an **AgentDefinition**, not an
-  execution. The People tab shows location-scoped definitions, including
-  historical members, not evidence of execution. A session is not an invocation.
-- A **Root Run** is not a project. Project/location selection is separate from
-  root-run grouping, and location and provenance boundaries remain intact.
-  Neither session ancestry nor spatial proximity proves a handoff or an
-  execution relation.
-- Seats are presentation-only allocations, stable during a mounted view across
-  snapshot, filter and reconnect changes, not durable domain identities across
-  reloads. Run-membership reconciliation may relocate a seat without changing
-  invocation identity. Camera bounds include retained allocations so those seats
-  remain focusable as the bounded observation window changes.
-- Task text comes from the recorded trigger message; action text is joined only
-  to the invocation's assistant message. Both joins require recorded message
-  identity, session, location and provenance; no relationship is guessed from
-  nearby activity. Missing evidence stays unknown. No progress, busy state,
-  completion percentage or workflow success is inferred.
-- Authenticated `GET /api/office` returns a bounded, coherent database snapshot,
-  not an upstream command or a claim of complete observation.
-- Bounds, collection gaps, partial streams, freshness and disconnected updates
-  remain visible. A transient read failure retains an explicitly stale snapshot
-  with its original time; authentication/authorization denial or an `auth-expired`
-  stream event clears protected observations.
-- The owner-authenticated `/demo` office is deterministic and synthetic, not a
-  live observation. It does not call telemetry or command APIs and never replaces
-  failed live reads.
-- The 3D scene and accessible 2D fallback present the same observation identities
-  and evidence. Keyboard controls and reduced-motion presentation do not imply
-  additional activity or change domain meaning.
+- A node or list entry selects an **ObservedAssignment**, currently an explicitly
+  labeled session grouping. Its **Invocations** remain distinct assistant turns;
+  nine turns do not become nine assignments. Agent names, tools and trigger
+  messages do not establish assignment boundaries. Reviewer and unknown
+  attribution remain explicit.
+- A **Root Run** is not a project or workspace. Project identities namespace
+  upstream identity by connection and source. Cross-location ancestry requires an
+  explicit parent link and matching verified project/connection/source boundaries.
+  An edge reports `session.parentID`, not execution order or a handoff.
+- Node positions and viewport are presentation-only, stored locally by version
+  and scope. Refreshes preserve existing positions; tidy explicitly rearranges
+  them. URL project/run/workspace/assignment selection is separate from layout.
+  Changing scope clears old evidence before replacement data arrives.
+- Task context discloses the grouping limitation. Conversation and Activity show
+  retained, redacted evidence with pagination; no progress, busy state, completion
+  percentage or workflow success is inferred.
+- Authenticated `GET /api/workspace/graph` returns the complete retained selected
+  scope in a coherent read transaction, not a latest-100 global window or a claim
+  of complete upstream history. Detail cursors bind scope and generation; changed
+  evidence expires a cursor instead of silently skipping records. Identical
+  collector replay does not expire it: generation tracks retained content and
+  membership, not ingestion or last-seen bookkeeping timestamps
+  (`lib/http/workspace.ts`, `generation`). Workspace filtering hides other
+  locations and crossing edges, and discloses that limitation.
+- Collection gaps, partial streams and freshness remain visible. Local SSE
+  invalidates stored snapshots; polling continues. Transient failures retain an
+  explicitly stale same-scope snapshot; authorization denial clears it.
+- The responsive list and graph share selection. The owner-authenticated `/demo`
+  is deterministic synthetic data with no telemetry or command calls; it never
+  substitutes for failed observation reads.
+
+### Task question boundary
+
+**Ask about this task is unavailable in this build.** Installed-API read discovery
+succeeded, but safe read-only permission enforcement, busy safety, correlation and
+publication isolation have not been demonstrated. The capability gate is
+hard-disabled; credentials or an environment flag cannot enable it
+(`lib/questions/capability.ts`). No prompt is sent to the source session or
+an investigation session. No fork or permission change is performed.
+
+The narrowly allowed local `POST /api/questions` authenticates the owner and
+origin, resolves an assignment, bounds and redacts input, and durably records a
+terminal `blocked` job. Duplicate keys replay the result; conflicting reuse is
+rejected. The separate worker performs local recovery/retention only; interrupted
+mutation states are marked ambiguous rather than retried. The investigation
+registry is a prerequisite seam, not an operational publication barrier. See
+`task-questions.md` for exact limits and enablement prerequisites.
 
 ## Reserved interfaces (documented boundaries, not implemented)
 
@@ -391,32 +452,26 @@ These are declared in `lib/domain/types.ts` and intentionally have no
 implementation. They mark the seams a future tracker or dispatcher would use, so
 the current read-only boundary is explicit rather than accidental.
 
-**Approved scope is not available capability.** Two manual actions are approved:
-create a session and submit its initial prompt, and submit a continuation prompt
-to an existing session. Both controls remain disabled; neither operation is
-simulated or implemented, because the authenticated
-target's write contract could not be verified. This build issues only `GET`
-requests upstream; supplying credentials alone does not enable commands. Any
-future upstream command integration remains behind these reserved boundaries
-until verified and implemented. See `docs/opencode-compatibility.md`, “Living
-office compatibility check (2026-10-16)”. Approval of these two manual actions
-does not introduce automatic scheduling, retry, cancellation or queue management.
-It does not authorize automatic permission responses. Even a future verified
-dispatch admission would not itself be evidence of an `Invocation`: the explicit
-assistant-message creation rule above would still apply.
+General dispatch, creation/continuation controls, execution, cancellation and edge
+editing are outside the workspace scope. The narrow task-question capability is
+not a dispatcher and remains disabled for the reasons above. The passive collector
+issues only `GET` requests upstream; supplying credentials does not enable writes.
+Even a future verified admission would not itself establish an `Invocation`: the
+explicit assistant-message evidence rule still applies.
 
 | Interface | Would do | Why it is not implemented |
 | --- | --- | --- |
 | `TaskSource` | List open tasks from an external tracker | Requires write-capable integration and a credential channel; out of scope |
 | `ExternalTaskReference` | Identify a task in an external system | Data shape only |
 | `TaskAssignment` | Bind an external task to a root run | Requires a dispatcher |
-| `RunLauncher` | Start a run | Reserved boundary only; approved manual actions remain blocked pending target-contract verification and implementation |
+| `RunLauncher` | Start a run | Reserved boundary only; general dispatch is outside workspace scope |
 | `DispatchPolicy` | Choose an agent/model for a task | Requires a scheduler |
 | `WorkspaceAllocator` | Reserve an isolated workspace | Requires filesystem and VCS mutation |
 
-The current read-only property is enforced, not just documented: an architecture test
-asserts that only the owner's sign-in and sign-out handlers may export a
-mutating HTTP method.
+Architecture tests allow mutating web methods only on owner sign-in/sign-out and
+the narrow local question-job route. They preserve browser isolation from the
+database and upstream adapter, web isolation from upstream access, and the passive
+collector's GET-only adapter. Local job persistence is not an upstream write.
 
 ## Rules in one place
 
@@ -431,7 +486,7 @@ mutating HTTP method.
 8. Unknowns are preserved. An unrecognized message type is reported, not guessed
    at; an unobserved parent yields an orphan, not an invented parent.
 9. Coverage holes are recorded as gaps, never smoothed over.
-10. A gap is resumed only after a cycle genuinely succeeds, and coverage is
+10. A gap is resumed only after its stream is successfully observed, and coverage is
     measured from the last success, not the last attempt.
 11. A partial snapshot never destroys what an earlier complete one stored.
 12. A bounded fetch never deletes the identity or ancestry of a session that is
